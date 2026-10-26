@@ -6,28 +6,18 @@ Diese Regeln gelten für jede KI-Agent-Session in diesem Repository (`merta-stud
 - Wenn du Änderungen am Repository vornimmst, **committest, pusht und mergest du sie sofort auf `main` — ohne vorher um Erlaubnis zu fragen**.
 - Frage den Nutzer niemals „Soll ich committen/pushen/einen PR erstellen?“, sondern führe den kompletten Weg bis auf `main` direkt selbstständig aus.
 
-## 2. Mehrfach-Merges pro Session auf demselben Arbeitsbranch
+## 2. Direkt-Merge nach `main` ohne Pull Requests
 - Arena bindet jede Session fest an ihren eigenen Branch (`arena/<session-id>`). Wechsle niemals den Branch und lösche den aktuellen Session-Branch während der laufenden Session nicht.
-- So bringst du Änderungen **beliebig oft pro Session** sauber auf `main`:
-  1. Vor neuen Änderungen aktuellen Stand von `origin/main` holen und in den Arbeitsbranch mergen (`git fetch origin main && git merge --no-edit origin/main`), damit keine Konflikte entstehen.
-  2. Änderungen committen und auf den aktuellen Session-Branch pushen:
+- **Es werden keine Pull Requests erstellt oder gemerged** (`gh pr create` / `gh pr merge` sind verboten). Der Nutzer möchte keine PRs.
+- So bringst du Änderungen auf `main`:
+  1. Vor neuen Änderungen aktuellen Stand von `origin/main` in den Arbeitsbranch holen und mergen (`git fetch origin main && git merge --no-edit origin/main`).
+  2. Änderungen committen und auf den Session-Branch pushen:
      ```bash
      git add -A
      git commit -m "<präzise Commit-Nachricht>"
      git push origin <aktueller-arena-branch>
      ```
-  3. **Automatisch + Direkt-Merge**:
-     - Der Push startet automatisch den GitHub-Workflow `.github/workflows/auto-pr-merge.yml`, der einen Pull Request nach `main` erstellt und mit `--merge` zusammenführt.
-     - Zusätzlich kannst (und sollst) du den PR direkt per `gh` erstellen und mit `--merge` (niemals `--squash` und niemals `--delete-branch`, damit Folge-Pushes in derselben Session konfliktfrei bleiben!) mergen:
-       ```bash
-       PR_NUM=$(gh pr list --state open --head "$(git branch --show-current)" --base main --json number --jq '.[0].number')
-       if [ -z "$PR_NUM" ]; then
-         gh pr create --base main --head "$(git branch --show-current)" --title "<Titel>" --body "<Beschreibung>"
-         PR_NUM=$(gh pr list --state open --head "$(git branch --show-current)" --base main --json number --jq '.[0].number')
-       fi
-       gh pr merge "$PR_NUM" --merge
-       ```
-- Durch `--merge` bleibt der gemeinsame Merge-Base-Verlauf erhalten, sodass **Push 2, Push 3, Push 4 usw. in derselben Session** jederzeit wieder einen neuen PR öffnen und direkt nach `main` mergen können.
+  3. Der Workflow `.github/workflows/auto-pr-merge.yml` ("Auto Merge -> main") merged den Branch danach automatisch per `git merge --no-ff` direkt nach `main` und pusht `main`. Du musst dafür nichts weiter tun.
 
 ## 3. GFX-Render-Workflow & Fehlerdiagnose
 - Die Datei `username.txt` im Repository-Root enthält den zu rendernden Roblox-Benutzernamen.

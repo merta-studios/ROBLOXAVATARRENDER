@@ -10,8 +10,8 @@ Vollautomatischer GitHub-Actions-Renderer für Roblox **R6-Avatare** auf Basis v
    - Öffnet [`WomanRig.blend`](./WomanRig.blend) in **Blender 5.0 (`bpy`)**, wendet den hochauflösenden R6-Texturatlas auf alle fertig geposten Körperteile an und platziert Kopf sowie Accessoires mit exakt denselben Principled-BSDF-Materialeinstellungen auf dem Rig.
    - Rendert mit **Blender EEVEE** bei **transparentem Hintergrund (`RGBA`)**.
    - Zeigt in der **Workflow-Übersicht (`Summary`) ausschließlich eine Sache**: entweder das fertig gerenderte Bild oder eine präzise Fehlermeldung.
-3. **Auto PR & Merge (`.github/workflows/auto-pr-merge.yml`)**:
-   - Jeder Push auf einen Arbeitsbranch erstellt automatisch einen Pull Request nach `main` und merged ihn per `--merge` (mehrfach pro Agent-Session nutzbar, siehe [`AGENTS.md`](./AGENTS.md)).
+3. **Auto Merge -> main (`.github/workflows/auto-pr-merge.yml`)**:
+   - Jeder Push auf einen Arbeitsbranch wird automatisch direkt per `git merge --no-ff` nach `main` gemerged und gepusht. Es werden **keine Pull Requests** erstellt (siehe [`AGENTS.md`](./AGENTS.md)).
 4. **Automatische Bereinigung (`.github/workflows/cleanup.yml`)**:
    - Räumt alte Branches, alte Versionen/Releases, alte Tags, alte Workflow-Runs, Artefakte und Caches automatisch auf und behält immer nur den jeweils neuesten Stand.
 
@@ -30,4 +30,3 @@ Vollautomatischer GitHub-Actions-Renderer für Roblox **R6-Avatare** auf Basis v
 3. **GitHub Actions Workflow-Berechtigungen prüfen**:
    - Unter **Settings -> Actions -> General -> Workflow permissions**:
    - **Read and write permissions** aktivieren
-   - Haken bei **Allow GitHub Actions to create and approve pull requests** setzen.

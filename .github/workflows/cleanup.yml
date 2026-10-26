@@ -3,7 +3,7 @@ name: Repository Cleanup
 on:
   workflow_run:
     workflows:
-      - "Auto PR & Merge"
+      - "Auto Merge -> main"
       - "Render Roblox Avatar"
     types:
       - completed
