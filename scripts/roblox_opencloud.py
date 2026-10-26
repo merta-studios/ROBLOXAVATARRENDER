@@ -641,6 +641,14 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
 
     face_tex_path = str(work_dir / "face_texture.png")
     face_img.save(face_tex_path, format="PNG")
+    alpha_info = "kein Alpha"
+    if face_img.mode in ("RGBA", "LA", "PA"):
+        a_min, a_max = face_img.getchannel("A").getextrema()
+        alpha_info = f"Alpha {a_min}..{a_max}"
+    print(
+        f"[face] {face_img.size[0]}x{face_img.size[1]} {face_img.mode} ({alpha_info}) "
+        f"Kopf-Hautfarbe={tuple(body_colors['head'])}"
+    )
 
     # 3. Kopf laden (Classic Head, Custom SpecialMesh Head, Headless oder DynamicHead)
     head_spec = HeadSpec(

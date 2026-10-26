@@ -119,8 +119,16 @@ def _find_principled_and_tex(mat: bpy.types.Material):
     return bsdf, tex
 
 
+# Glänzender Roblox-Kunststoff (GFX-Look): niedrige Roughness + klarer Klarlack.
+GLOSS_ROUGHNESS = 0.09
+GLOSS_SPECULAR_IOR_LEVEL = 0.55
+GLOSS_COAT_WEIGHT = 0.45
+GLOSS_COAT_ROUGHNESS = 0.035
+GLOSS_IOR = 1.5
+
+
 def _clone_rig_material(
-    template_mat: bpy.types.Material,
+    template_mat: bpy.types.Material | None,
     name: str,
     *,
     texture_path: str | None = None,
@@ -129,39 +137,52 @@ def _clone_rig_material(
     alpha_blend: bool = False,
     transparency: float = 0.0,
 ) -> bpy.types.Material:
-    """Übernimmt Shader-Werte, aber keine rig-spezifischen UV-/Attribut-Links."""
-    mat = template_mat.copy()
-    mat.name = name
+    """Erzeugt ein frisches, glänzendes Principled-Material für Körper/Kopf/Accessoires.
+
+    Das Rig-Material aus `WomanRig.blend` wird bewusst NICHT kopiert: es ist ein
+    komplexer Diffuse/Anisotropic-Glossy-Node-Baum, dessen Texturen auf Windows-
+    Pfade zeigen und dessen Principled-Werte (u. a. Roughness 0) nicht zu einem
+    Roblox-Avatar passen. Dadurch ist das Ergebnis deterministisch und hängt
+    nicht von rig-spezifischen UV-, Attribut- oder Farb-Links ab.
+    """
+    mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     tree = mat.node_tree
-    original_bsdf, _ = _find_principled_and_tex(template_mat)
-    # Rig-Nodes können nach fehlenden UV-Layern/Attributen suchen oder die
-    # Farbtextur in Roughness multiplizieren. Kopf und Accessoires besitzen
-    # eigene UVs; nur konstante BSDF-Werte dürfen übernommen werden.
+    if tree is None:  # pragma: no cover - defensive
+        return mat
     tree.nodes.clear()
+
     bsdf = tree.nodes.new("ShaderNodeBsdfPrincipled")
-    if original_bsdf:
-        for socket in original_bsdf.inputs:
-            target = bsdf.inputs.get(socket.name)
-            if target is not None and hasattr(socket, "default_value"):
-                target.default_value = socket.default_value
+    bsdf.name = "AvatarPrincipled"
     output = tree.nodes.new("ShaderNodeOutputMaterial")
     tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+
     # Glänzender, nichtmetallischer Roblox-Kunststoff, unabhängig vom Albedo.
     bsdf.inputs["Metallic"].default_value = 0.0
-    bsdf.inputs["Roughness"].default_value = 0.18
-    bsdf.inputs["Specular IOR Level"].default_value = 0.5
-    bsdf.inputs["Coat Weight"].default_value = 0.25
-    bsdf.inputs["Coat Roughness"].default_value = 0.12
-    tex_node = None
+    bsdf.inputs["Roughness"].default_value = GLOSS_ROUGHNESS
+    bsdf.inputs["IOR"].default_value = GLOSS_IOR
+    bsdf.inputs["Specular IOR Level"].default_value = GLOSS_SPECULAR_IOR_LEVEL
+    bsdf.inputs["Coat Weight"].default_value = GLOSS_COAT_WEIGHT
+    bsdf.inputs["Coat Roughness"].default_value = GLOSS_COAT_ROUGHNESS
+    if bsdf.inputs.get("Coat Tint"):
+        bsdf.inputs["Coat Tint"].default_value = (1.0, 1.0, 1.0, 1.0)
+    if bsdf.inputs.get("Coat IOR"):
+        bsdf.inputs["Coat IOR"].default_value = GLOSS_IOR
+    if bsdf.inputs.get("Sheen Weight"):
+        bsdf.inputs["Sheen Weight"].default_value = 0.0
+    if bsdf.inputs.get("Emission Strength"):
+        bsdf.inputs["Emission Strength"].default_value = 0.0
+    if bsdf.inputs.get("Transmission Weight"):
+        bsdf.inputs["Transmission Weight"].default_value = 0.0
+    if bsdf.inputs.get("Subsurface Weight"):
+        bsdf.inputs["Subsurface Weight"].default_value = 0.0
 
     alpha_val = max(0.0, min(1.0, 1.0 - transparency))
     if bsdf.inputs.get("Alpha"):
         bsdf.inputs["Alpha"].default_value = alpha_val
 
     if texture_path:
-        if tex_node is None:
-            tex_node = tree.nodes.new("ShaderNodeTexImage")
+        tex_node = tree.nodes.new("ShaderNodeTexImage")
         img = bpy.data.images.load(texture_path, check_existing=True)
         img.colorspace_settings.name = "sRGB"
         tex_node.image = img
@@ -189,8 +210,6 @@ def _clone_rig_material(
             if hasattr(mat, "surface_render_method"):
                 mat.surface_render_method = "BLENDED"
     else:
-        if tex_node is not None:
-            tree.nodes.remove(tex_node)
         bsdf.inputs["Base Color"].default_value = (
             _srgb_to_linear(solid_srgb[0]),
             _srgb_to_linear(solid_srgb[1]),
@@ -204,6 +223,57 @@ def _clone_rig_material(
     return mat
 
 
+def _rgb_luma(rgb: tuple[float, float, float]) -> float:
+    """Grobe Helligkeit (0..255) eines sRGB-Farbtripels."""
+    return 0.2126 * float(rgb[0]) + 0.7152 * float(rgb[1]) + 0.0722 * float(rgb[2])
+
+
+def _face_overlay_rgba(face_img: Image.Image) -> Image.Image:
+    """Liefert das Gesichts-Decal als RGBA-Overlay mit transparentem Hintergrund.
+
+    Roblox-Gesichter sind normalerweise transparente PNGs. Manche Face-Assets
+    (bzw. als JPEG ausgelieferte CDN-Antworten) haben jedoch einen deckenden,
+    einfarbigen Hintergrund - in der Praxis fast immer Schwarz. Ungeprüft
+    über den Kopf komponiert ergibt das exakt den Fehler "Kopf ist schwarz":
+    der gesamte Front-UV-Bereich wird mit der Hintergrundfarbe übermalt, nur
+    Augen/Mund bleiben sichtbar.
+
+    Deshalb: vorhandenes Alpha respektieren, sonst die Randfarbe als
+    Hintergrund wegkeyen (mit weichem Rand gegen harte Kanten).
+    """
+    img = face_img.convert("RGBA")
+    if img.getchannel("A").getextrema()[0] < 250:
+        return img  # echtes Alpha vorhanden -> unverändert verwenden
+
+    arr = np.asarray(img, dtype=np.int16)
+    h, w = arr.shape[:2]
+    ring = max(1, min(h, w) // 64)
+    border = np.concatenate(
+        [
+            arr[:ring, :, :3].reshape(-1, 3),
+            arr[h - ring :, :, :3].reshape(-1, 3),
+            arr[:, :ring, :3].reshape(-1, 3),
+            arr[:, w - ring :, :3].reshape(-1, 3),
+        ]
+    )
+    # Kein einfarbiger Rand -> Vollbild-Artwork, nicht keyen.
+    if float(border.std(axis=0).max()) > 12.0:
+        return img
+
+    bg = np.median(border.astype(np.float32), axis=0)
+    dist = np.abs(arr[:, :, :3].astype(np.float32) - bg).max(axis=2)
+    inner, outer = 18.0, 52.0
+    alpha = np.clip((dist - inner) / (outer - inner), 0.0, 1.0)
+
+    out = arr.copy()
+    out[:, :, 3] = np.round(alpha * 255.0).astype(np.int16)
+    # Transparente Pixel auf Schwarz setzen, damit beim Filtern keine
+    # Hintergrundfarbe in die Kanten blutet.
+    transparent = out[:, :, 3] == 0
+    out[transparent, 0:3] = 0
+    return Image.fromarray(out.astype(np.uint8), mode="RGBA")
+
+
 def _bake_head_composite_texture(
     skin_rgb: tuple[int, int, int],
     face_texture_path: str | None,
@@ -211,12 +281,35 @@ def _bake_head_composite_texture(
 ) -> str:
     """Baut eine 1024x1024 sRGB Kopftextur (Hautfarbe + Gesichts-Decal im Front-UV-Feld)."""
     size = 1024
+    pad = 128
+    face_size = size - 2 * pad  # Front-UV-Bereich [0.125 .. 0.875]
     canvas = Image.new("RGBA", (size, size), (*skin_rgb, 255))
     if face_texture_path and Path(face_texture_path).is_file():
-        face_img = Image.open(face_texture_path).convert("RGBA")
+        face_img = _face_overlay_rgba(Image.open(face_texture_path))
         # Front-UV-Bereich [0.125 .. 0.875] x [0.125 .. 0.875] -> 768x768 Pixel zentriert
-        f_resized = face_img.resize((768, 768), Image.Resampling.LANCZOS)
-        canvas.alpha_composite(f_resized, dest=(128, 128))
+        f_resized = face_img.resize((face_size, face_size), Image.Resampling.LANCZOS)
+        canvas.alpha_composite(f_resized, dest=(pad, pad))
+
+        # Sicherheitsnetz: Die Kopfhaut darf niemals durch das Decal abdunkeln.
+        # Ein korrektes Face bedeckt nur Augen/Mund (mittlere Helligkeit bleibt
+        # nahe der Hautfarbe); ein deckender Hintergrund würde die komplette
+        # Frontfläche einfärben.
+        front = np.asarray(canvas.convert("RGB"), dtype=np.float32)[
+            pad : size - pad, pad : size - pad
+        ]
+        skin_luma = max(_rgb_luma(skin_rgb), 1.0)
+        front_luma = float(
+            0.2126 * front[:, :, 0].mean()
+            + 0.7152 * front[:, :, 1].mean()
+            + 0.0722 * front[:, :, 2].mean()
+        )
+        if front_luma < 0.55 * skin_luma:
+            print(
+                "WARN: Gesichts-Decal verdunkelt die Kopfhaut "
+                f"(Decal-Helligkeit {front_luma:.1f} vs. Haut {skin_luma:.1f}) - "
+                "Decal wird verworfen, damit der Kopf die korrekte Hautfarbe behält."
+            )
+            canvas = Image.new("RGBA", (size, size), (*skin_rgb, 255))
     canvas.convert("RGB").save(out_path, format="PNG")
     return str(out_path)
 
@@ -392,22 +485,41 @@ def _build_blender_mesh_from_rbx(
 
 
 def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
-    """Ersetzt die fehlende EXR-Umgebung durch sauberes Studio-Licht (transparenter Hintergrund)."""
+    """Studio-Licht mit klar definierten Reflexen (glossy Kunststoff-Look).
+
+    Roblox-Avatare sind lackierter Kunststoff: Der Glanz entsteht nicht nur
+    über die Roughness, sondern vor allem über die *Umgebung*, die sich im
+    Material spiegelt. Eine weiche Verlaufs-Umgebung ohne Kanten wirkt immer
+    matt - deshalb hat die Welt hier eine harte Horizontkante (Reflexionslinie)
+    und die Lampen sind kleiner und heller (definierte Specular-Highlights).
+    """
     world = scene.world or bpy.data.worlds.new("StudioWorld")
     scene.world = world
+    world.use_nodes = True
     tree = world.node_tree
     tree.nodes.clear()
 
     tex_coord = tree.nodes.new("ShaderNodeTexCoord")
     sep_xyz = tree.nodes.new("ShaderNodeSeparateXYZ")
     ramp = tree.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = 0.0
-    ramp.color_ramp.elements[0].color = (0.35, 0.37, 0.42, 1.0)
-    ramp.color_ramp.elements[1].position = 1.0
-    ramp.color_ramp.elements[1].color = (0.95, 0.96, 1.0, 1.0)
+    ramp.color_ramp.interpolation = "LINEAR"
+    stops: list[tuple[float, tuple[float, float, float, float]]] = [
+        (0.00, (0.020, 0.022, 0.028, 1.0)),  # unten: dunkler Boden
+        (0.42, (0.090, 0.100, 0.125, 1.0)),
+        (0.50, (1.900, 2.000, 2.200, 1.0)),  # harte Horizontkante = Reflexionslinie
+        (0.56, (0.300, 0.320, 0.360, 1.0)),
+        (1.00, (1.100, 1.150, 1.300, 1.0)),  # oben: heller Himmel/Softbox
+    ]
+    elements = ramp.color_ramp.elements
+    while len(elements) > 1:
+        elements.remove(elements[-1])
+    elements[0].position, elements[0].color = stops[0]
+    for pos, col in stops[1:]:
+        el = elements.new(pos)
+        el.color = col
 
     bg = tree.nodes.new("ShaderNodeBackground")
-    bg.inputs["Strength"].default_value = 0.50
+    bg.inputs["Strength"].default_value = 0.85
     out = tree.nodes.new("ShaderNodeOutputWorld")
 
     tree.links.new(tex_coord.outputs["Generated"], sep_xyz.inputs["Vector"])
@@ -422,10 +534,12 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
         energy: float,
         size: float,
         color: tuple[float, float, float],
+        shape: str = "SQUARE",
     ) -> None:
         ldata = bpy.data.lights.new(name=name, type="AREA")
         ldata.energy = energy
         ldata.size = size
+        ldata.shape = shape
         ldata.color = color
         lobj = bpy.data.objects.new(name=name, object_data=ldata)
         scene.collection.objects.link(lobj)
@@ -433,10 +547,76 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
         direction = Vector(target) - Vector(loc)
         lobj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
-    # Klassisches 3-Punkt GFX Studio-Setup
-    add_area_light("GFX_KeyLight", (-3.2, -4.8, 5.6), (0.0, 0.0, 3.1), 155.0, 3.6, (1.0, 0.98, 0.95))
-    add_area_light("GFX_FillLight", (3.6, -4.6, 3.4), (0.0, 0.0, 2.7), 85.0, 4.2, (0.93, 0.96, 1.0))
-    add_area_light("GFX_RimLight", (0.4, 4.2, 5.5), (0.0, 0.0, 3.6), 115.0, 3.0, (1.0, 1.0, 1.0))
+    # Klassisches GFX-Setup: harte Key-/Rim-Highlights + weiches Fill.
+    add_area_light("GFX_KeyLight", (-2.8, -4.6, 5.4), (0.0, 0.0, 3.4), 420.0, 1.7, (1.0, 0.98, 0.95))
+    add_area_light("GFX_FillLight", (3.6, -4.2, 2.9), (0.0, 0.0, 2.8), 150.0, 3.2, (0.92, 0.95, 1.0))
+    add_area_light("GFX_RimLight", (0.8, 3.8, 5.4), (0.0, 0.0, 3.6), 320.0, 1.3, (1.0, 1.0, 1.0))
+    add_area_light("GFX_TopSoftbox", (0.0, -1.2, 7.4), (0.0, 0.0, 4.4), 240.0, 2.6, (1.0, 1.0, 1.0))
+    add_area_light("GFX_Kicker", (3.0, -1.4, 4.4), (0.0, 0.0, 3.8), 110.0, 0.8, (1.0, 0.99, 0.97))
+
+
+def _log_scene_diagnostics(scene: bpy.types.Scene, render_objects: list[bpy.types.Object]) -> None:
+    """Kompakte Diagnose in den Workflow-Logs (hilft beim Beheben von Render-Fehlern)."""
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    print(f"[render] Objekte im Render: {len(render_objects)}")
+    for obj in render_objects:
+        if obj.type != "MESH":
+            continue
+        eval_obj = obj.evaluated_get(depsgraph)
+        try:
+            mesh = eval_obj.to_mesh()
+        except Exception:
+            mesh = None
+        if mesh is None:
+            continue
+        n = len(mesh.vertices)
+        if n == 0:
+            eval_obj.to_mesh_clear()
+            continue
+        co = np.empty(n * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("co", co)
+        pts = co.reshape(n, 3).astype(np.float64)
+        mw = np.array(eval_obj.matrix_world, dtype=np.float64)
+        world = (pts @ mw[:3, :3].T) + mw[:3, 3]
+        lo, hi = world.min(axis=0), world.max(axis=0)
+        mats = [slot.material.name for slot in obj.material_slots if slot.material]
+        print(
+            f"[render]   {obj.name[:38]:38s} x[{lo[0]:+.2f},{hi[0]:+.2f}] "
+            f"z[{lo[2]:+.2f},{hi[2]:+.2f}] y[{lo[1]:+.2f},{hi[1]:+.2f}] mats={mats}"
+        )
+        eval_obj.to_mesh_clear()
+
+    for mat in bpy.data.materials:
+        if not mat.name.startswith(("AvatarBody_", "AvatarHead", "AccMat_")):
+            continue
+        bsdf, tex = _find_principled_and_tex(mat)
+        img = None
+        if tex is not None and tex.image is not None:
+            img = f"{tex.image.name} {tex.image.size[0]}x{tex.image.size[1]}"
+        rough = None
+        if bsdf is not None and bsdf.inputs.get("Roughness"):
+            rough = round(bsdf.inputs["Roughness"].default_value, 3)
+        print(f"[render]   MAT {mat.name[:38]:38s} roughness={rough} tex={img}")
+        if mat.name.startswith("AvatarHead") and tex is not None and tex.image is not None:
+            try:
+                px = np.empty(len(tex.image.pixels), dtype=np.float32)
+                tex.image.pixels.foreach_get(px)
+                rgb = px.reshape(-1, 4)[:, :3]
+                mean = rgb.mean(axis=0)
+                print(
+                    "[render]   Kopf-Textur Mittelwert (linear): "
+                    f"R={mean[0]:.3f} G={mean[1]:.3f} B={mean[2]:.3f}"
+                )
+            except Exception as exc:  # pragma: no cover - nur Diagnose
+                print(f"[render]   Kopf-Textur konnte nicht gelesen werden: {exc}")
+
+    others = [o for o in bpy.data.objects if o not in render_objects]
+    print(f"[render] Nicht gerenderte Szenen-Objekte: {len(others)}")
+    for obj in others:
+        print(
+            f"[render]   {obj.name[:30]:30s} type={obj.type:9s} "
+            f"hide_render={obj.hide_render} hide_viewport={obj.hide_viewport}"
+        )
 
 
 def _setup_auto_framed_camera(
@@ -654,6 +834,7 @@ def render_avatar_scene(
         render_objects.append(acc_obj)
 
     # 5. Studio-Beleuchtung, Kamera & Blender EEVEE Render-Konfiguration (transparenter Hintergrund)
+    _log_scene_diagnostics(scene, render_objects)
     _setup_studio_lighting_and_world(scene)
     _setup_auto_framed_camera(scene, render_objects, res_x, res_y)
 
@@ -675,11 +856,24 @@ def render_avatar_scene(
 
     if hasattr(scene, "eevee"):
         if hasattr(scene.eevee, "taa_render_samples"):
-            scene.eevee.taa_render_samples = 64
+            scene.eevee.taa_render_samples = 128
         if hasattr(scene.eevee, "use_shadows"):
             scene.eevee.use_shadows = True
         if hasattr(scene.eevee, "use_raytracing"):
             scene.eevee.use_raytracing = True
+        # Klare Spiegelungen statt weichgezeichneter "matter" Reflexe.
+        rt_opts = getattr(scene.eevee, "ray_tracing_options", None)
+        if rt_opts is not None:
+            for attr, value in (
+                ("trace_max_roughness", 0.6),
+                ("use_denoise", True),
+                ("resolution_scale", "1"),
+            ):
+                if hasattr(rt_opts, attr):
+                    try:
+                        setattr(rt_opts, attr, value)
+                    except Exception:
+                        pass
 
     output_png.parent.mkdir(parents=True, exist_ok=True)
     scene.render.filepath = str(output_png.resolve())
