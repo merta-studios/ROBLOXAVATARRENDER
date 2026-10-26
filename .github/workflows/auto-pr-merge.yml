@@ -1,0 +1,82 @@
+name: Auto PR & Merge
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: auto-pr-merge
+  cancel-in-progress: false
+
+jobs:
+  pr-and-merge:
+    name: Auto Pull Request & Merge -> main
+    if: startsWith(github.ref, 'refs/heads/') && github.ref_name != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Pull Request erstellen & nach main mergen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main "$BRANCH"
+
+          AHEAD=$(git rev-list --count "origin/main..origin/$BRANCH")
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "Branch '$BRANCH' enthält keine neuen Commits gegenüber 'main'."
+            exit 0
+          fi
+
+          USERNAME_CHANGED="false"
+          if ! git diff --quiet "origin/main...origin/$BRANCH" -- username.txt; then
+            if grep -qvE '^\s*(#|$)' <(git show "origin/$BRANCH:username.txt" 2>/dev/null || true); then
+              USERNAME_CHANGED="true"
+            fi
+          fi
+
+          LAST_MSG=$(git log -1 --pretty=%s "origin/$BRANCH")
+          MERGED="false"
+
+          # 1. Versuche regulären Pull Request + Merge-Commit (--merge ohne --delete-branch für Multi-Push Sessions)
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty' || true)
+          if [ -z "$EXISTING_PR" ]; then
+            if PR_URL=$(gh pr create --base main --head "$BRANCH" --title "Auto-Merge: $LAST_MSG" --body "Automatischer Pull Request von \`$BRANCH\` nach \`main\`." 2>/tmp/pr_err.txt); then
+              EXISTING_PR="${PR_URL##*/}"
+            else
+              cat /tmp/pr_err.txt >&2 || true
+            fi
+          fi
+
+          if [ -n "${EXISTING_PR:-}" ]; then
+            if gh pr merge "$EXISTING_PR" --merge; then
+              MERGED="true"
+            fi
+          fi
+
+          # 2. Fallback: Direkter No-FF Merge auf main, falls Actions PR-Erstellung in Repo-Settings noch deaktiviert ist
+          if [ "$MERGED" != "true" ]; then
+            git checkout -B main origin/main
+            git merge --no-ff "origin/$BRANCH" -m "Merge branch '$BRANCH' into main: $LAST_MSG"
+            git push origin main
+          fi
+
+          # 3. Falls username.txt geändert wurde, starte Render-Workflow (da GITHUB_TOKEN-Merges kein push-Event auslösen)
+          if [ "$USERNAME_CHANGED" = "true" ]; then
+            gh workflow run render-avatar.yml --ref main || true
+          fi
