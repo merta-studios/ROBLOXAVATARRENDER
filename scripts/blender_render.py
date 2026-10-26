@@ -129,20 +129,31 @@ def _clone_rig_material(
     alpha_blend: bool = False,
     transparency: float = 0.0,
 ) -> bpy.types.Material:
-    """Klont das Original-Material aus WomanRig.blend für identische Shader-Einstellungen."""
+    """Übernimmt Shader-Werte, aber keine rig-spezifischen UV-/Attribut-Links."""
     mat = template_mat.copy()
     mat.name = name
+    mat.use_nodes = True
     tree = mat.node_tree
-    bsdf, tex_node = _find_principled_and_tex(mat)
-    if bsdf is None or tree is None:
-        return mat
-
-    # Entferne alte Links in Base Color / Alpha, behalte aber exakt alle BSDF-Parameter des Rigs
-    for sock_name in ("Base Color", "Alpha"):
-        sock = bsdf.inputs.get(sock_name)
-        if sock:
-            for lnk in list(sock.links):
-                tree.links.remove(lnk)
+    original_bsdf, _ = _find_principled_and_tex(template_mat)
+    # Rig-Nodes können nach fehlenden UV-Layern/Attributen suchen oder die
+    # Farbtextur in Roughness multiplizieren. Kopf und Accessoires besitzen
+    # eigene UVs; nur konstante BSDF-Werte dürfen übernommen werden.
+    tree.nodes.clear()
+    bsdf = tree.nodes.new("ShaderNodeBsdfPrincipled")
+    if original_bsdf:
+        for socket in original_bsdf.inputs:
+            target = bsdf.inputs.get(socket.name)
+            if target is not None and hasattr(socket, "default_value"):
+                target.default_value = socket.default_value
+    output = tree.nodes.new("ShaderNodeOutputMaterial")
+    tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+    # Glänzender, nichtmetallischer Roblox-Kunststoff, unabhängig vom Albedo.
+    bsdf.inputs["Metallic"].default_value = 0.0
+    bsdf.inputs["Roughness"].default_value = 0.18
+    bsdf.inputs["Specular IOR Level"].default_value = 0.5
+    bsdf.inputs["Coat Weight"].default_value = 0.25
+    bsdf.inputs["Coat Roughness"].default_value = 0.12
+    tex_node = None
 
     alpha_val = max(0.0, min(1.0, 1.0 - transparency))
     if bsdf.inputs.get("Alpha"):
@@ -434,7 +445,7 @@ def _setup_auto_framed_camera(
     res_x: int,
     res_y: int,
 ) -> None:
-    """Positioniert eine 50mm Studio-Kamera exakt passend zur Bounding-Box von Rig + Accessoires."""
+    """Enger Oberkörper-Ausschnitt mit 2,5 Prozent Abstand über Kopf/Accessoires."""
     depsgraph = bpy.context.evaluated_depsgraph_get()
     min_pt = np.array([1e9, 1e9, 1e9], dtype=np.float64)
     max_pt = np.array([-1e9, -1e9, -1e9], dtype=np.float64)
@@ -465,33 +476,24 @@ def _setup_auto_framed_camera(
         max_pt = np.array([1.6, 0.8, 5.4])
 
     cx = float(0.5 * (min_pt[0] + max_pt[0]))
-    cz = float(0.5 * (min_pt[2] + max_pt[2]))
-    span_x = float(max_pt[0] - min_pt[0])
-    span_z = float(max_pt[2] - min_pt[2])
-    front_y = float(min_pt[1])
+    # Hüfte des WomanRig liegt bei Z=2.24: nur 0.29 Einheiten Oberschenkel
+    # zeigen. Füße und untere Accessoires sollen die Kamera nicht herauszoomen.
+    bottom = 1.95
+    top = max(float(max_pt[2]), 2.5)
+    top_padding = 0.025
+    frame_height = (top - bottom) / (1.0 - top_padding)
+    center_z = bottom + frame_height * 0.5
 
     cam_data = bpy.data.cameras.new("GFX_Camera")
-    cam_data.lens = 55.0
-    cam_data.sensor_fit = "HORIZONTAL"
-    cam_data.sensor_width = 36.0
-
-    aspect = res_x / res_y
-    half_fov_h = math.atan(0.5 * cam_data.sensor_width / cam_data.lens)
-    half_fov_v = math.atan(math.tan(half_fov_h) / aspect)
-
-    margin = 1.20
-    dist_h = (0.5 * span_x * margin) / math.tan(half_fov_h)
-    dist_v = (0.5 * span_z * margin) / math.tan(half_fov_v)
-    dist = max(dist_h, dist_v, 6.5)
-
+    # Orthografisch: die Oberkante aller Accessoires hat unabhängig von ihrer
+    # Tiefe exakt denselben kleinen Abstand; keine perspektivischen Rand-Clips.
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = frame_height * max(1.0, res_x / res_y)
+    cam_data.clip_end = 1000.0
     cam_obj = bpy.data.objects.new("GFX_Camera", cam_data)
     scene.collection.objects.link(cam_obj)
-
-    # Leichter, schmeichelhafter GFX-Kamerawinkel von vorne (-Y -> +Y)
-    cam_loc = Vector((cx - 0.35, front_y - dist, cz + 0.18))
-    target = Vector((cx, 0.0, cz + 0.02))
-    cam_obj.location = cam_loc
-    cam_obj.rotation_euler = (target - cam_loc).to_track_quat("-Z", "Y").to_euler()
+    cam_obj.location = Vector((cx, float(min_pt[1]) - 20.0, center_z))
+    cam_obj.rotation_euler = Vector((0.0, 1.0, 0.0)).to_track_quat("-Z", "Y").to_euler()
     scene.camera = cam_obj
 
 
@@ -500,8 +502,8 @@ def render_avatar_scene(
     bundle: AvatarBundle,
     output_png: Path,
     work_dir: Path,
-    res_x: int = 1080,
-    res_y: int = 1350,
+    res_x: int = 2000,
+    res_y: int = 2000,
     _dry_run: bool = False,
 ) -> None:
     """Öffnet WomanRig.blend, texturiert Körperteile, platziert Kopf & Accessoires und rendert mit EEVEE."""
@@ -526,19 +528,19 @@ def render_avatar_scene(
         raise RuntimeError("Kein Basis-Material in WomanRig.blend gefunden.")
 
     # 2. Wende zusammengesetzte R6-Avatar-Textur auf alle bestehenden Körperteile an
-    body_img = bpy.data.images.load(bundle.body_texture_path, check_existing=True)
-    body_img.colorspace_settings.name = "sRGB"
-    visited_mats: set[str] = set()
+    body_materials: dict[str, bpy.types.Material] = {}
     for bobj in rig_body_objects:
         for slot in bobj.material_slots:
-            mat = slot.material
-            if mat is None or mat.name in visited_mats or not mat.node_tree:
+            source = slot.material
+            if source is None:
                 continue
-            visited_mats.add(mat.name)
-            for node in mat.node_tree.nodes:
-                if node.type == "TEX_IMAGE":
-                    node.image = body_img
-                    node.interpolation = "Smart"
+            if source.name not in body_materials:
+                body_materials[source.name] = _clone_rig_material(
+                    source,
+                    f"AvatarBody_{source.name}",
+                    texture_path=bundle.body_texture_path,
+                )
+            slot.material = body_materials[source.name]
 
     target_collection = rig_body_objects[0].users_collection[0] if rig_body_objects[0].users_collection else scene.collection
     render_objects: list[bpy.types.Object] = list(rig_body_objects)
@@ -660,6 +662,9 @@ def render_avatar_scene(
     scene.render.resolution_x = res_x
     scene.render.resolution_y = res_y
     scene.render.resolution_percentage = 100
+    scene.render.pixel_aspect_x = 1.0
+    scene.render.pixel_aspect_y = 1.0
+    scene.render.use_border = False
     if hasattr(scene.render.image_settings, "media_type"):
         scene.render.image_settings.media_type = "IMAGE"
     scene.render.image_settings.file_format = "PNG"
