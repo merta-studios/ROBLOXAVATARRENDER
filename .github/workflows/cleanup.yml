@@ -1,0 +1,184 @@
+name: Repository Cleanup
+
+on:
+  workflow_run:
+    workflows:
+      - "Auto PR & Merge"
+      - "Render Roblox Avatar"
+    types:
+      - completed
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+
+concurrency:
+  group: repo-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Alte Branches, Versionen, Runs & Artefakte bereinigen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Automatische Bereinigung ausführen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import subprocess
+          import urllib.parse
+
+          repo = os.environ["REPO"]
+          current_run_id = int(os.environ["CURRENT_RUN_ID"])
+          now = dt.datetime.now(dt.timezone.utc)
+
+          def gh_api(method: str, endpoint: str):
+              cmd = ["gh", "api", "-X", method, endpoint]
+              res = subprocess.run(cmd, capture_output=True, text=True)
+              if res.returncode != 0:
+                  return None
+              text = res.stdout.strip()
+              if not text:
+                  return {}
+              try:
+                  return json.loads(text)
+              except json.JSONDecodeError:
+                  return {}
+
+          def encode_ref_path(name: str) -> str:
+              return "/".join(urllib.parse.quote(seg, safe="") for seg in name.split("/"))
+
+          def parse_iso(ts: str) -> dt.datetime:
+              return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+          deleted = {"branches": 0, "releases": 0, "tags": 0, "runs": 0, "artifacts": 0, "caches": 0}
+
+          # 1. Offene Pull Requests ermitteln (deren Quell-Branches niemals löschen)
+          open_prs = gh_api("GET", f"repos/{repo}/pulls?state=open&per_page=100") or []
+          protected_branches = {"main", "master"}
+          for pr in open_prs:
+              ref = (pr.get("head") or {}).get("ref")
+              if ref:
+                  protected_branches.add(ref)
+
+          # 2. Branches prüfen: Behalte 'main' + neuesten aktiven 'arena/*' Session-Branch (< 6 Std.), lösche Rest
+          branches = gh_api("GET", f"repos/{repo}/branches?per_page=100") or []
+          arena_candidates = []
+          other_candidates = []
+
+          for br in branches:
+              bname = br.get("name", "")
+              if not bname or bname in protected_branches:
+                  continue
+              sha = (br.get("commit") or {}).get("sha", "")
+              cinfo = gh_api("GET", f"repos/{repo}/commits/{sha}") if sha else None
+              cdate_str = (((cinfo or {}).get("commit") or {}).get("committer") or {}).get("date")
+              cdate = parse_iso(cdate_str) if cdate_str else now
+              age_hours = (now - cdate).total_seconds() / 3600.0
+              if bname.startswith("arena/"):
+                  arena_candidates.append((cdate, age_hours, bname))
+              else:
+                  other_candidates.append((cdate, age_hours, bname))
+
+          # Neuesten arena/* Branch schützen, falls er jünger als 6 Stunden ist (aktive Agent-Session)
+          arena_candidates.sort(key=lambda x: x[0], reverse=True)
+          for idx, (_cdate, age_hours, bname) in enumerate(arena_candidates):
+              if idx == 0 and age_hours < 6.0:
+                  continue
+              if gh_api("DELETE", f"repos/{repo}/git/refs/heads/{encode_ref_path(bname)}") is not None:
+                  deleted["branches"] += 1
+
+          # Sonstige Branches löschen, sobald sie in main gemerged sind oder älter als 6 Stunden sind
+          for _cdate, age_hours, bname in other_candidates:
+              cmp_info = gh_api("GET", f"repos/{repo}/compare/main...{encode_ref_path(bname)}")
+              ahead_by = (cmp_info or {}).get("ahead_by", 1)
+              if ahead_by == 0 or age_hours >= 6.0:
+                  if gh_api("DELETE", f"repos/{repo}/git/refs/heads/{encode_ref_path(bname)}") is not None:
+                      deleted["branches"] += 1
+
+          # 3. Releases ("Versionen") bereinigen: Nur das allerneueste Release behalten
+          releases = gh_api("GET", f"repos/{repo}/releases?per_page=100") or []
+          releases.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+          kept_tags = {"latest-render"}
+          for idx, rel in enumerate(releases):
+              if idx == 0:
+                  if rel.get("tag_name"):
+                      kept_tags.add(rel["tag_name"])
+                  continue
+              rid = rel.get("id")
+              if rid and gh_api("DELETE", f"repos/{repo}/releases/{rid}") is not None:
+                  deleted["releases"] += 1
+
+          # 4. Alte Git-Tags bereinigen: Nur den aktiven Tag der neuesten Version behalten
+          tags = gh_api("GET", f"repos/{repo}/tags?per_page=100") or []
+          for t in tags:
+              tname = t.get("name", "")
+              if tname and tname not in kept_tags:
+                  if gh_api("DELETE", f"repos/{repo}/git/refs/tags/{encode_ref_path(tname)}") is not None:
+                      deleted["tags"] += 1
+
+          # 5. Alte Artefakte bereinigen: Nur das neueste Render-Artefakt behalten
+          art_resp = gh_api("GET", f"repos/{repo}/actions/artifacts?per_page=100") or {}
+          artifacts = [a for a in (art_resp.get("artifacts") or []) if not a.get("expired")]
+          artifacts.sort(key=lambda a: a.get("created_at") or "", reverse=True)
+          for idx, art in enumerate(artifacts):
+              if idx == 0:
+                  continue
+              aid = art.get("id")
+              if aid and gh_api("DELETE", f"repos/{repo}/actions/artifacts/{aid}") is not None:
+                  deleted["artifacts"] += 1
+
+          # 6. Alte Actions-Caches bereinigen: Nur den neuesten aktiven Pip-Cache behalten
+          cache_resp = gh_api("GET", f"repos/{repo}/actions/caches?per_page=100") or {}
+          caches = cache_resp.get("actions_caches") or []
+          caches.sort(key=lambda c: c.get("last_accessed_at") or c.get("created_at") or "", reverse=True)
+          for idx, c in enumerate(caches):
+              if idx == 0:
+                  continue
+              cid = c.get("id")
+              if cid and gh_api("DELETE", f"repos/{repo}/actions/caches/{cid}") is not None:
+                  deleted["caches"] += 1
+
+          # 7. Alte Workflow-Runs bereinigen:
+          #    - Für Render & Auto-Merge jeweils nur den 1 neuesten abgeschlossenen Run behalten
+          #    - Für Cleanup alle abgeschlossenen Vorläufer löschen (aktueller Lauf bleibt als einziger übrig)
+          runs_resp = gh_api("GET", f"repos/{repo}/actions/runs?per_page=100") or {}
+          all_runs = runs_resp.get("workflow_runs") or []
+          by_wf: dict[int, list[dict]] = {}
+          for run in all_runs:
+              if run.get("id") == current_run_id or run.get("status") != "completed":
+                  continue
+              wf_id = int(run.get("workflow_id") or 0)
+              by_wf.setdefault(wf_id, []).append(run)
+
+          for wf_id, wf_runs in by_wf.items():
+              wf_runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+              wf_path = (wf_runs[0].get("path") or "").lower()
+              keep_count = 0 if "cleanup.yml" in wf_path else 1
+              for r in wf_runs[keep_count:]:
+                  rid = r.get("id")
+                  if rid and gh_api("DELETE", f"repos/{repo}/actions/runs/{rid}") is not None:
+                      deleted["runs"] += 1
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "w", encoding="utf-8") as fh:
+                  fh.write(
+                      f"Bereinigt: {deleted['branches']} Branches, "
+                      f"{deleted['releases']} Releases, "
+                      f"{deleted['tags']} Tags, "
+                      f"{deleted['runs']} Workflow-Runs, "
+                      f"{deleted['artifacts']} Artefakte, "
+                      f"{deleted['caches']} Caches.\n"
+                  )
+          PY

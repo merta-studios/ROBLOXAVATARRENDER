@@ -1,0 +1,13 @@
+# Python & Virtualenvs
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Temp & Blender Backups
+*.blend1
+*.blend2
+/tmp_avatar/
+/build/
+/dist/
+.DS_Store
