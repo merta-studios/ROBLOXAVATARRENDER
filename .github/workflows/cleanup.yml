@@ -23,7 +23,7 @@ concurrency:
 jobs:
   cleanup:
     name: Alte Branches, Versionen, Runs & Artefakte bereinigen
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Automatische Bereinigung ausführen
         env:
