@@ -1,11 +1,11 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "MertaStudios"
+username = "Alamer_Roblox"
 
 # Erlaubt: "transparent", Hex-Farbe #RGB oder #RRGGBB,
 # direkte http(s)-Bild-URL (max. 50 MB), lokaler Motivname (Originalfarbe) oder
 # "Farbordner/Motiv" für eine bestimmte Variante, z. B. "lila/herzen-konfetti".
 # Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP.
-background = "transparent"
+background = "sternnebel"
 
 # Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
 material = "Glossy"
@@ -13,10 +13,10 @@ material = "Glossy"
 [outline]
 # Dicke in Prozent der Bildbreite (Dezimalzahlen erlaubt, 0 bis 100).
 # Bei 2000 px Bildbreite ist 1 = 20 px. 0 deaktiviert die Umrandung.
-thickness_percent = 1
+thickness_percent = 0.05
 
 # true = Umrandung nach außen vom Avatar weg; false = nach innen auf den Avatar.
-outside = true
+outside = false
 
 # Punkt, ab dem die Umrandung ausblendet (0 bis 100 Prozent der Umrandungsdicke).
 # 0 = Fade über die ganze Dicke; 50 = erste Hälfte deckend, danach Fade;
