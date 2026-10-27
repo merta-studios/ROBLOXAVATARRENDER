@@ -3,7 +3,7 @@ name: Render Roblox Avatar
 on:
   push:
     branches:
-      - arena/17feec3c-robloxavatarrender
+      - main
     paths:
       - 'username.txt'
       - 'WomanRig.blend'
@@ -130,26 +130,6 @@ jobs:
             >/dev/null 2>&1 || true
 
           echo "RENDER_IMAGE_URL=https://github.com/${GITHUB_REPOSITORY}/blob/${COMMIT_SHA}/avatar.png?raw=true" >> "$GITHUB_ENV"
-
-      - name: Temporäre Vorschau zur Sichtprüfung
-        if: steps.execute.outcome == 'success'
-        run: |
-          python - <<'PY'
-          import base64
-          from pathlib import Path
-          from PIL import Image
-
-          image = Image.open('/tmp/render_out/avatar.png').convert('RGBA')
-          image.thumbnail((480, 480), Image.Resampling.LANCZOS)
-          preview = Path('/tmp/avatar-preview.png')
-          image.save(preview, format='PNG', optimize=True)
-          Path('avatar-preview.b64').write_text(base64.b64encode(preview.read_bytes()).decode('ascii'))
-          PY
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add avatar-preview.b64
-          git commit -m "Stage temporary avatar preview for visual verification"
-          git push origin "HEAD:${GITHUB_REF}"
 
       - name: Render-Artefakt speichern
         if: steps.execute.outcome == 'success'
