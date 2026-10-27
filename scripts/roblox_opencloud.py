@@ -241,7 +241,7 @@ class RobloxOpenCloudClient:
         items = resp.json().get("data") or []
         if not items:
             raise PipelineError(
-                f"Der Roblox-Benutzer '{clean}' existiert nicht. Bitte prüfe den Namen in 'configs.json'."
+                f"Der Roblox-Benutzer '{clean}' existiert nicht. Bitte prüfe den Namen in 'configs.toml'."
             )
 
         user_id = int(items[0]["id"])

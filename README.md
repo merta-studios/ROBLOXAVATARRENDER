@@ -4,7 +4,7 @@ Vollautomatischer GitHub-Actions-Renderer für Roblox **R6-Avatare** auf Basis v
 
 ## Funktionsweise
 
-1. **`configs.json` bearbeiten**: Benutzername, Hintergrund, Material und Avatar-Umrandung werden zentral in [`configs.json`](./configs.json) eingestellt.
+1. **`configs.toml` bearbeiten**: Benutzername, Hintergrund, Material und Avatar-Umrandung werden zentral in [`configs.toml`](./configs.toml) eingestellt. Die Beschreibungen und gültigen Werte stehen dort jeweils direkt als Kommentar über der Einstellung.
    - **Hintergrund**: `transparent`, ein Hex-Farbwert (z. B. `#2a5bff`), eine direkte Bild-URL oder der Name einer Bilddatei in [`backgrounds/`](./backgrounds/). Das Bild wird als Image Texture auf das Mesh-Plane `Background` gelegt.
    - **Material**: Nur `Glossy` (bisheriger Glanz) und `Matt` (hohe Roughness, kein Klarlack).
    - **Umrandung**: Dicke in Prozent der Bildbreite, Position innen/außen, Transparenz-Fade ab einem prozentualen Dickenanteil und Farbe als Hex, `white` oder `black`. Bei 2000 px Bildbreite entspricht 1 % genau 20 px; `0` deaktiviert sie.

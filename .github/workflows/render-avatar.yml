@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'configs.json'
+      - 'configs.toml'
       - 'backgrounds/**'
       - 'WomanRig.blend'
       - 'scripts/**'
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       username:
-        description: 'Optionaler Roblox-Benutzername (leer lassen, um configs.json zu nutzen)'
+        description: 'Optionaler Roblox-Benutzername (leer lassen, um configs.toml zu nutzen)'
         required: false
         type: string
 
@@ -83,10 +83,10 @@ jobs:
 
           mkdir -p /tmp/render_out
 
-          # 4. Roblox-Avatar und Render-Konfiguration aus configs.json ausführen
+          # 4. Roblox-Avatar und Render-Konfiguration aus configs.toml ausführen
           if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX +render -noreset" \
                python scripts/run_render_pipeline.py \
-                 --config-file configs.json \
+                 --config-file configs.toml \
                  --blend-file WomanRig.blend \
                  --output /tmp/render_out/avatar.png \
                  --status-json /tmp/render_status.json \
@@ -121,7 +121,7 @@ jobs:
           gh release create latest-render /tmp/render_out/avatar.png \
             --target "$COMMIT_SHA" \
             --title "Aktuelles Avatar Render" \
-            --notes "Automatisch gerenderter Roblox R6 Avatar (Blender Cycles, Hintergrund gemäß configs.json)." \
+            --notes "Automatisch gerenderter Roblox R6 Avatar (Blender Cycles, Hintergrund gemäß configs.toml)." \
             >/dev/null 2>&1 || true
 
           echo "RENDER_IMAGE_URL=https://github.com/${GITHUB_REPOSITORY}/blob/${COMMIT_SHA}/avatar.png?raw=true" >> "$GITHUB_ENV"
