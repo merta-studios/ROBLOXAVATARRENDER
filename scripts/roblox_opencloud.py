@@ -16,6 +16,11 @@ import zstandard
 from PIL import Image, ImageDraw
 
 from scripts.brick_colors import brick_color_to_rgb, hex_to_rgb
+from scripts.r15_clothing import (
+    CLOTHING_RECTS,
+    compose_r15_part_textures,
+    crop_template_rect as _crop_template,
+)
 from scripts.rbx_formats import (
     IDENTITY_CFRAME,
     MeshData,
@@ -45,37 +50,6 @@ RIGID_ACCESSORY_TYPE_IDS = {
     46,  # BackAccessory
     47,  # WaistAccessory
 }
-
-# Offizielle Pixel-Rechtecke auf dem 585x559 Roblox Classic Shirt/Pants Template
-TEMPLATE_W = 585
-TEMPLATE_H = 559
-CLOTHING_RECTS: dict[str, dict[str, tuple[int, int, int, int]]] = {
-    "torso": {
-        "Front": (231, 74, 128, 128),
-        "Back": (427, 74, 128, 128),
-        "Right": (165, 74, 64, 128),
-        "Left": (361, 74, 64, 128),
-        "Top": (231, 8, 128, 64),
-        "Bottom": (231, 204, 128, 64),
-    },
-    "right": {
-        "Front": (217, 355, 64, 128),
-        "Back": (85, 355, 64, 128),
-        "Right": (151, 355, 64, 128),
-        "Left": (19, 355, 64, 128),
-        "Top": (217, 289, 64, 64),
-        "Bottom": (217, 485, 64, 64),
-    },
-    "left": {
-        "Front": (308, 355, 64, 128),
-        "Back": (440, 355, 64, 128),
-        "Right": (506, 355, 64, 128),
-        "Left": (374, 355, 64, 128),
-        "Top": (308, 289, 64, 64),
-        "Bottom": (308, 485, 64, 64),
-    },
-}
-
 
 class PipelineError(RuntimeError):
     """Klarer, nutzer- und agentenlesbarer Fehler für die GitHub Workflow-Übersicht."""
@@ -128,6 +102,8 @@ class AvatarBundle:
     # Dokumentation im Status-Report.
     scales: dict[str, float] = field(default_factory=dict)
     player_avatar_type: int | None = None
+    # ClassicType: pro R15-Teil eine eigene Shirt/Pants/T-Shirt/Face-Textur.
+    r15_part_textures: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -573,20 +549,8 @@ class RobloxOpenCloudClient:
 # R6 Body Texture Compositor (exakt abgestimmt auf WomanRig.blend UVs)
 # ---------------------------------------------------------------------------
 
-def _crop_template(img: Image.Image, rect: tuple[int, int, int, int]) -> Image.Image:
-    x, y, w, h = rect
-    if img.size != (TEMPLATE_W, TEMPLATE_H):
-        sx = img.width / TEMPLATE_W
-        sy = img.height / TEMPLATE_H
-        box = (
-            int(round(x * sx)),
-            int(round(y * sy)),
-            int(round((x + w) * sx)),
-            int(round((y + h) * sy)),
-        )
-    else:
-        box = (x, y, x + w, y + h)
-    return img.crop(box)
+# _crop_template kommt aus scripts.r15_clothing (dort liegen auch die
+# unveraenderten Template-Konstanten fuer den R6- und den R15-Compositor).
 
 
 def _paste_with_bleed(canvas: Image.Image, tile: Image.Image, x: int, y: int, bleed: int = 8) -> None:
@@ -862,6 +826,15 @@ def load_avatar_bundle(
         f"Kopf-Hautfarbe={tuple(body_colors['head'])}"
     )
 
+    # 2b. ClassicType: pro R15-Teil eine passende Classic-Clothing-Textur.
+    #     Der R6-Atlas oben bleibt unveraendert fuer HearthandsType.
+    r15_part_textures: dict[str, str] = {}
+    if gfx_type == "ClassicType":
+        r15_part_textures = compose_r15_part_textures(
+            body_colors, shirt_img, pants_img, tshirt_img, face_img, work_dir
+        )
+        print(f"[classic clothing] {len(r15_part_textures)} R15-Teiltexturen erzeugt.")
+
     # 3. Kopf laden (Classic Head, Custom SpecialMesh Head, Headless oder DynamicHead)
     head_spec = HeadSpec(
         kind="classic_head",
@@ -1101,4 +1074,5 @@ def load_avatar_bundle(
         accessories=accessories,
         scales=scales,
         player_avatar_type=player_avatar_type,
+        r15_part_textures=r15_part_textures,
     )

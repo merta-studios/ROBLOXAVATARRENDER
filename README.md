@@ -5,12 +5,12 @@ Vollautomatischer GitHub-Actions-Renderer für Roblox-Avatare auf Basis von `Wom
 - **`HearthandsType/configs.toml`** – "Preppy Hearthands Type": das klassische R6-Render aus `WomanRig.blend` mit optionalem Korblox-Bein und Headless-Look.
 - **`ClassicType/configs.toml`** – der Avatar wird als R15 komplett über die Roblox Open Cloud API geladen (Layered Clothing und Equipment-Accessoires werden ausgeschlossen). Fehlende Körperteile ersetzt der offizielle Standard-R15-Blocky-Rig; dazu kommen wählbare Posen, Drehung und Abstand von oben/unten.
 
-Die gemeinsamen Hintergründe bleiben im geteilten Ordner [`backgrounds/`](./backgrounds/) und gehören nicht zu einem einzelnen GFX-Typ.
+Die gemeinsamen Hintergründe bleiben im geteilten Ordner [`backgrounds/`](./backgrounds/) und gehören nicht zu einem einzelnen GFX-Typ. Neben den bestehenden Farbordnern gibt es jetzt auch [`backgrounds/weiss/`](./backgrounds/weiss/) und [`backgrounds/schwarz/`](./backgrounds/schwarz/) mit je drei ruhigen, monochromen Avatar-Hintergründen.
 
 ## Funktionsweise
 
 1. **Konfiguration bearbeiten**: Benutzername, Hintergrund, Material und Avatar-Umrandung werden zentral in der Konfigurationsdatei des gewählten GFX-Typs eingestellt. Die Beschreibungen und gültigen Werte stehen dort direkt als Kommentar über der Einstellung.
-   - **Hintergrund**: `transparent`, ein Hex-Farbwert (z. B. `#2a5bff`), eine direkte Bild-URL oder einen lokalen Motivnamen aus [`backgrounds/`](./backgrounds/); ein nackter Name wählt die Originalfarbe, `Farbordner/Motivname` wie `lila/herzen-konfetti` eine konkrete Variante.
+   - **Hintergrund**: `transparent`, ein Hex-Farbwert (z. B. `#2a5bff`), eine direkte Bild-URL oder einen lokalen Motivnamen aus [`backgrounds/`](./backgrounds/); ein nackter Name wählt die Originalfarbe, `Farbordner/Motivname` wie `lila/herzen-konfetti`, `weiss/softes-licht` oder `schwarz/neon-linien` eine konkrete Variante.
    - **Material**: `Glossy` (bisheriger Glanz) oder `Matt` (hohe Roughness, kein Klarlack).
    - **Umrandung**: Dicke in Prozent der Bildbreite, Position innen/außen, Transparenz-Fade ab einem prozentualen Dickenanteil und Farbe als Hex, `white` oder `black`. Bei 2000 px Bildbreite entspricht 1 % genau 20 px; `0` deaktiviert sie.
 2. **Automatischer Render (`.github/workflows/render-avatar.yml`)**:
@@ -31,7 +31,7 @@ Kopf & Gesicht: Dynamic-/Custom-Heads behalten ihre eigene Mesh-UV-Map und Kopft
 
 Der zweite Ordner [`ClassicType/`](./ClassicType/) enthält eine eigene [`configs.toml`](./ClassicType/configs.toml) mit `username`, `outline`, `background`, `material` und weiteren Einstellungen. Der Avatar wird anders geladen: als **R15 komplett über die Roblox Avatar/Open-Cloud-API** – ohne Layered Clothing (Asset-Typen 64 bis 72) und ohne Accessoires vom Typ "Equipment". Der öffentliche v4-Endpunkt benötigt ein `.ROBLOSECURITY`-Cookie; deshalb nutzt der Client den funktionierenden öffentlichen v2-Endpunkt (`fetch_avatar_metadata_v4()` kapselt das).
 
-**Strikte Trennung:** `ClassicType` öffnet **`WomanRig.blend` nicht**. `scripts/classic_render.py` baut eine eigene leere Blender-Szene mit Kamera, Licht und Ortho-Projektion. `scripts/blender_render.py` gehört ausschließlich zu `HearthandsType` und erhält keine ClassicType-Parameter. Als Körper dient der **offizielle Standard-R15-Blocky-Rig von Roblox**: Die Originaldatei [`ClassicType/assets/R15_Block.fbx`](./ClassicType/assets/R15_Block.fbx) stammt aus dem offiziellen [`Roblox/avatar`](https://github.com/Roblox/avatar/blob/main/Legacy/rigs/R15_Block.fbx)-Repo und wurde einmalig mit `python3 -m scripts.r15_blocky_rig` in das kompakte, `bpy`-freie Asset [`ClassicType/assets/r15_blocky.json.gz`](./ClassicType/assets/r15_blocky.json.gz) überführt (15 Meshes inkl. UVs und originalen Attachment-Positionen). Fehlende Körperteil-Assets im Inventar werden damit nicht mehr durch einfache Quader, sondern durch genau diese Standard-R15-Teile ersetzt; die sechs BodyColors färben die 15 Teile. Geladene Accessoires sind echte Meshes mit UVs/Texturen. Emote-Keyframes werden mangels Armatur über Gruppen-Empties (jeweils die drei zusammengehörigen R15-Teile) näherungsweise angewendet; Accessoires bewegen sich dabei mit ihrer Gruppe mit. Bei `pose = "None"` wird kein Emote geladen und keine Pose angewendet. Hintergrund und Umrandung werden nach einem transparenten Render als gemeinsame PNG-Nachbearbeitung in `scripts/image_compositing.py` gesetzt.
+**Strikte Trennung:** `ClassicType` öffnet **`WomanRig.blend` nicht**. `scripts/classic_render.py` baut eine eigene leere Blender-Szene mit Kamera, Licht und Ortho-Projektion. `scripts/blender_render.py` gehört ausschließlich zu `HearthandsType` und erhält keine ClassicType-Parameter. Als Körper dient der **offizielle Standard-R15-Blocky-Rig von Roblox**: Die Originaldatei [`ClassicType/assets/R15_Block.fbx`](./ClassicType/assets/R15_Block.fbx) stammt aus dem offiziellen [`Roblox/avatar`](https://github.com/Roblox/avatar/blob/main/Legacy/rigs/R15_Block.fbx)-Repo und wurde einmalig mit `python3 -m scripts.r15_blocky_rig` in das kompakte, `bpy`-freie Asset [`ClassicType/assets/r15_blocky.json.gz`](./ClassicType/assets/r15_blocky.json.gz) überführt (15 Meshes inkl. UVs und originalen Attachment-Positionen). Fehlende Körperteil-Assets im Inventar werden damit nicht mehr durch einfache Quader, sondern durch genau diese Standard-R15-Teile ersetzt. `scripts/r15_clothing.py` erzeugt aus Classic-Shirt, -Hose, -T‑Shirt und Face-Decal für jedes der 15 Teile eine eigene 3×2-Textur und berechnet die UVs aus den Mesh-Normalen neu; die sechs BodyColors bleiben als Grundfarbe sichtbar, wo Kleidung transparent ist. Geladene Accessoires sind echte Meshes mit UVs/Texturen. Emote-Keyframes werden mangels Armatur über Gruppen-Empties (jeweils die drei zusammengehörigen R15-Teile) näherungsweise angewendet; Accessoires bewegen sich dabei mit ihrer Gruppe mit. Bei `pose = "None"` wird kein Emote geladen und keine Pose angewendet. Hintergrund und Umrandung werden nach einem transparenten Render als gemeinsame PNG-Nachbearbeitung in `scripts/image_compositing.py` gesetzt.
 
 Weitere ClassicType-Einstellungen:
 
@@ -40,7 +40,7 @@ Weitere ClassicType-Einstellungen:
 - **`rotation_deg`**: Drehung in Grad um die vertikale Achse: `0` = schaut zur Mitte, `45` = schräg nach rechts, `-45` = schräg nach links.
 - **`abstand_oben` / `abstand_unten`**: Abstand vom oberen bzw. unteren Bildrand in Prozent der Avatar-Höhe (Länge zwischen höchstem und tiefstem Punkt des 3D-Modells). `100` = eine komplette Avatar-Höhe Platz vor dem Avatar, `10` = 10 Prozent davon, `-10` = der Avatar rutscht bereits zu 10% in den Rand hinein.
 
-Das kompakte R15-Asset lässt sich bei Bedarf aus der mitgelieferten Original-FBX neu erzeugen: `python3 -m scripts.r15_blocky_rig`. Der Render selbst liest nur `r15_blocky.json.gz` und benötigt weder die FBX-Datei noch `bpy` zum Laden der Geometrie. Individuell ausgerüstete Körperteil-Assets aus dem Inventar werden aktuell nicht als eigene Meshes geladen; sichtbar ist in diesem Fall weiterhin der offizielle Standard-R15-Blocky-Rig in den BodyColors des Avatars.
+Das kompakte R15-Asset lässt sich bei Bedarf aus der mitgelieferten Original-FBX neu erzeugen: `python3 -m scripts.r15_blocky_rig`. Der Render selbst liest nur `r15_blocky.json.gz` und benötigt weder die FBX-Datei noch `bpy` zum Laden der Geometrie. Individuell ausgerüstete Körperteil-Assets aus dem Inventar werden aktuell nicht als eigene Meshes geladen; sichtbar ist in diesem Fall weiterhin der offizielle Standard-R15-Blocky-Rig mit den Classic-Kleidungstexturen und den BodyColors des Avatars.
 
 Umrandungs-Einstellungen (`[outline]`) funktionieren wie bei HearthandsType.
 
@@ -51,7 +51,7 @@ python3 -m py_compile scripts/*.py tests/*.py
 python3 -m unittest discover -s tests -v
 ```
 
-Ohne installiertes `bpy` laufen genau die 19 reinen Python-Tests; die Blender-Regressionstests werden nur in der CI gesammelt. Die Render-Pfade selbst benötigen `bpy==5.0.1` und das GitHub-Secret `ROBLOX_API_KEY`.
+Ohne installiertes `bpy` laufen genau die 24 reinen Python-Tests; die Blender-Regressionstests werden nur in der CI gesammelt. Die Render-Pfade selbst benötigen `bpy==5.0.1` und das GitHub-Secret `ROBLOX_API_KEY`.
 
 ## Auto Merge & Bereinigung
 

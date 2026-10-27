@@ -10,8 +10,10 @@ und die originalen Attachment-Positionen liegen einmalig aufbereitet in
 ``ClassicType/assets/r15_blocky.json.gz``. Es wird also weiterhin KEINE
 Blend-Datei benoetigt: Die Szene entsteht komplett aus diesen Daten. Fehlende
 Koerperteil-Assets im Inventar werden damit nicht mehr durch einfache Quader,
-sondern exakt durch die Standard-R15-Teile ersetzt. Geladene Accessoires sind
-ebenfalls echte Meshes mit UVs/Texturen. Emote-Keyframes werden mangels
+sondern exakt durch die Standard-R15-Teile ersetzt. Classic-Shirt, -Hose und
+-T-Shirt (sowie das Face-Decal) werden ueber ``scripts/r15_clothing.py`` als
+pro-Teil-Texturen mit neu berechneten UVs aufgebracht. Geladene Accessoires
+sind ebenfalls echte Meshes mit UVs/Texturen. Emote-Keyframes werden mangels
 Armatur ueber Gruppen-Empties naeherungsweise auf die R15-Teile uebertragen --
 bei ``pose = "None"`` wird weder ein Emote geladen noch eine Pose angewendet.
 
@@ -39,6 +41,7 @@ except ImportError:  # pragma: no cover - lokal ohne Blender-Systembibliotheken
 from scripts.gfx_layout import compute_spacing_transform
 from scripts.image_compositing import apply_avatar_outline, compose_background
 from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig
+from scripts.r15_clothing import compute_part_uvs
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
 from scripts.roblox_opencloud import AvatarBundle
@@ -306,7 +309,9 @@ def _solid_material(
         tex.interpolation = "Smart"
         tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
         tree.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
-        if hasattr(mat, "surface_render_method"):
+        # Nur echte Alpha-Texturen muessen blended rendern; die neuen
+        # R15-Teiltexturen sind opaque RGB und sollen kein Sorting-Rauschen.
+        if hasattr(mat, "surface_render_method") and getattr(image, "channels", 4) == 4:
             mat.surface_render_method = "BLENDED"
     else:
         bsdf.inputs["Base Color"].default_value = (*linear, 1.0)
@@ -324,9 +329,10 @@ def _create_r15_part(
     mesh.from_pydata(part.vertices, [], part.faces)
     mesh.update()
     uv_layer = mesh.uv_layers.new(name="UVMap")
+    part_uvs = compute_part_uvs(part)
     for loop in mesh.loops:
-        if loop.index < len(part.uvs):
-            uv_layer.data[loop.index].uv = part.uvs[loop.index]
+        if loop.index < len(part_uvs):
+            uv_layer.data[loop.index].uv = part_uvs[loop.index]
     if part.name == "Head":
         for poly in mesh.polygons:
             poly.use_smooth = True
@@ -551,14 +557,19 @@ def render_classic_scene(
     accessory_parents: list[tuple[Any, str]] = []
     group_empties: dict[str, Any] = {}
 
-    # 1. Offizieller Standard-R15-Blocky-Rig: 15 Meshes in den BodyColors.
+    # 1. Offizieller Standard-R15-Blocky-Rig: 15 Meshes mit Classic-Clothing.
     #    Fehlende Koerperteil-Assets aus dem Inventar werden so exakt durch
-    #    Roblox' Standardteile ersetzt, nicht durch einfache Quader.
+    #    Roblox' Standardteile ersetzt, nicht durch einfache Quader. Jedes Teil
+    #    hat seine eigene 3x2-Textur mit Shirt/Pants/T-Shirt bzw. Face-Decal.
     official_parts = load_r15_blocky_rig()
+    part_textures = getattr(bundle, "r15_part_textures", {}) or {}
     for name, part in official_parts.items():
         rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
         srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
-        material = _solid_material(f"Classic{name}Mat", srgb, material_finish)
+        texture_path = part_textures.get(name)
+        material = _solid_material(
+            f"Classic{name}Mat", srgb, material_finish, texture_path=texture_path
+        )
         body_objects[name] = _create_r15_part(part, material, scene, render_objects)
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.

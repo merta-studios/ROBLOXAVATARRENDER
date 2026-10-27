@@ -4,7 +4,9 @@ Alle Bilder liegen in nach tatsächlicher Farbe benannten Unterordnern. Die Date
 
 Jedes Motiv liegt im Ordner seiner Originalfarbe sowie in drei zusätzlichen Farbvarianten. Die Varianten werden in die Ordner `rot`, `blau`, `gruen` und `gold` einsortiert; pro Motiv wird die Variante ausgelassen, die der Originalfarbe am nächsten liegt. So steht die Farbe nur im Ordnernamen, nicht zusätzlich im Dateinamen. Transparente Bereiche und Helligkeitsdetails bleiben erhalten.
 
-Die hochgeladenen Originale sind PNG-Vorschauen mit 512 × 512 Pixeln; die Varianten haben dieselbe Auflösung. Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP. Alle werden als Image Texture auf das Mesh-Plane `Background` in `WomanRig.blend` gelegt.
+Zusätzlich gibt es die beiden Ordner `weiss/` und `schwarz/` mit je drei monochromen Avatar-Hintergründen. Sie sind bewusst ohne Farbvarianten, damit eine helle bzw. dunkle Basis auch bei kräftigen Avatarfarben ruhig bleibt. Auch diese Bilder sind 512 × 512 Pixel groß.
+
+Die hochgeladenen Originale sind PNG-Vorschauen mit 512 × 512 Pixeln; die Varianten haben dieselbe Auflösung. Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP. Bei `HearthandsType` werden sie als Image Texture auf das Mesh-Plane `Background` in `WomanRig.blend` gelegt; bei `ClassicType` setzt `scripts/image_compositing.py` sie als PNG-Hintergrund hinter den transparent gerenderten Avatar.
 
 | Nr. | Original-Ordner | Motivname |
 |---:|---|---|
@@ -28,7 +30,13 @@ Die hochgeladenen Originale sind PNG-Vorschauen mit 512 × 512 Pixeln; die Varia
 | 18 | `lila` | `kristallsplitter` |
 | 19 | `pink` | `fluid-wellen` |
 | 20 | `rot` | `sternnebel` |
+| 21 | `weiss` | `softes-licht` |
+| 22 | `weiss` | `papier-minimal` |
+| 23 | `weiss` | `helle-wellen` |
+| 24 | `schwarz` | `deeper-space` |
+| 25 | `schwarz` | `neon-linien` |
+| 26 | `schwarz` | `dunkles-raster` |
 
-Die Namen und Farbordner lassen sich reproduzierbar mit `python scripts/generate_background_variants.py` herstellen.
+Die Namen und Farbordner der Motive 1–20 lassen sich reproduzierbar mit `python scripts/generate_background_variants.py` herstellen. Die monochromen Motive 21–26 liegen bereits fertig in ihren Ordnern.
 
 Der GFXRhino-PFP-Background-Pack ist kostenlos auf der [Produktseite](https://gfxrhino.com/products/pfp-background-pack/) verfügbar. Lizenzhinweise: https://gfxrhino.com/license
