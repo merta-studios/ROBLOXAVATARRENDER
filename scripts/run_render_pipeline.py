@@ -1,4 +1,12 @@
-"""Haupt-Orchestrator für den Roblox R6 Avatar GFX Render-Workflow."""
+"""Haupt-Orchestrator für den Roblox Avatar GFX Render-Workflow.
+
+Unterstützt zwei vollständig getrennte GFX-Typen:
+
+* ``HearthandsType`` (Preppy Hearthands Type): Rendert auf Basis von
+  ``WomanRig.blend`` (R6-Rig) mit optionalem Korblox-Bein und Headless-Look.
+* ``ClassicType``: Rendert den R15-Avatar in einer eigenen Szene (siehe
+  ``scripts/classic_render.py``) -- komplett ohne ``WomanRig.blend``.
+"""
 
 from __future__ import annotations
 
@@ -45,10 +53,97 @@ def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> 
         )
 
 
+def render_hearthands(
+    *,
+    config: dict[str, Any],
+    bundle: AvatarBundle,
+    client: RobloxOpenCloudClient,
+    work_dir: Path,
+    output_png: Path,
+    blend_path: Path,
+    background_kind: str,
+    background_path: str | None,
+    background_value: str,
+) -> None:
+    """Rendert den HearthandsType-GFX (R6, WomanRig.blend, korblox, headless)."""
+    from scripts.blender_render import render_avatar_scene
+
+    korblox_asset: dict[str, Any] | None = None
+    if bool(config["korblox"]):
+        try:
+            korblox_asset = client.load_korblox_leg(work_dir)
+        except PipelineError as exc:
+            raise PipelineError(str(exc)) from exc
+
+    render_avatar_scene(
+        blend_path=blend_path,
+        bundle=bundle,
+        output_png=output_png,
+        work_dir=work_dir,
+        material_finish=config["material"],
+        background_kind=background_kind,
+        background_path=background_path,
+        background_value=background_value,
+        outline=config["outline"],
+        gfx_type="HearthandsType",
+        korblox=bool(config["korblox"]),
+        headless=bool(config["headless"]),
+        korblox_asset=korblox_asset,
+    )
+
+
+def render_classic(
+    *,
+    config: dict[str, Any],
+    bundle: AvatarBundle,
+    client: RobloxOpenCloudClient,
+    work_dir: Path,
+    output_png: Path,
+    background_kind: str,
+    background_path: str | None,
+    background_value: str,
+) -> None:
+    """Rendert den ClassicType-GFX (R15, eigene Szene, kein WomanRig.blend)."""
+    from scripts.classic_render import render_classic_scene
+
+    classic_pose = str(config.get("pose", "None"))
+    classic_emote = None
+    emote_asset_id = int(config.get("emote_asset_id", 0))
+
+    if classic_pose == "Equipped":
+        equipped = client.fetch_equipped_emote(bundle.user_id)
+        if equipped and equipped.get("emote_asset_id"):
+            emote_asset_id = int(equipped["emote_asset_id"])
+            print(
+                f"[pose] Ausgerüstete Profilpose (Emote {emote_asset_id}) wurde verwendet."
+            )
+        else:
+            print("[pose] Keine ausgerüstete Profilpose gefunden - Pose bleibt 'None'.")
+
+    if classic_pose == "Emote" and emote_asset_id:
+        classic_emote = client.load_emote_animation(emote_asset_id, work_dir)
+
+    render_classic_scene(
+        bundle=bundle,
+        output_png=output_png,
+        work_dir=work_dir,
+        material_finish=config["material"],
+        background_kind=background_kind,
+        background_path=background_path,
+        background_value=background_value,
+        outline=config["outline"],
+        classic_pose=classic_pose,
+        classic_emote=classic_emote,
+        classic_rotation_deg=float(config.get("rotation_deg", 0)),
+        classic_abstand_oben=float(config.get("abstand_oben", 0)),
+        classic_abstand_unten=float(config.get("abstand_unten", 0)),
+    )
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Rendert einen Roblox R6 Avatar mit WomanRig.blend in Blender Cycles.")
-    parser.add_argument("--config-file", default="HearthandsType/configs.toml", help="Pfad zur kommentierten TOML-Konfiguration für Avatar und Render. Der übergeordnete Ordner bestimmt den GFX-Typ (HearthandsType oder ClassicType).")
-    parser.add_argument("--blend-file", default="WomanRig.blend", help="Pfad zur WomanRig.blend Datei.")
+    parser = argparse.ArgumentParser(description="Rendert einen Roblox Avatar (HearthandsType oder ClassicType).")
+    parser.add_argument("--config-file", default="HearthandsType/configs.toml", help="Pfad zur TOML-Konfiguration. Der übergeordnete Ordner bestimmt den GFX-Typ.")
+    parser.add_argument("--blend-file", default="WomanRig.blend", help="Pfad zur WomanRig.blend Datei (nur HearthandsType).")
     parser.add_argument("--output", default="render/latest.png", help="Zielpfad für das gerenderte transparente PNG.")
     parser.add_argument("--status-json", default="/tmp/render_status.json", help="Pfad für den strukturierten Ergebnis-Report.")
     parser.add_argument("--gfx-type", default=None, help="GFX-Typ: 'HearthandsType' oder 'ClassicType'. Wird aus dem Konfigurations-Ordner abgeleitet, falls nicht angegeben.")
@@ -61,11 +156,11 @@ def main() -> int:
     config_file = (REPO_ROOT / args.config_file).resolve() if not Path(args.config_file).is_absolute() else Path(args.config_file)
 
     try:
-        if not blend_path.is_file():
-            raise PipelineError(f"Die Blender-Datei '{blend_path.name}' wurde im Repository nicht gefunden.")
+        if not config_file.is_file():
+            raise PipelineError(f"Die Konfigurationsdatei '{config_file.name}' wurde nicht gefunden.")
 
         try:
-            gfx_type_arg = args.gfx_type or None  # leerer String wird zu None
+            gfx_type_arg = args.gfx_type or None
             gfx_type = gfx_type_from_config_path(config_file, gfx_type_arg)
             if gfx_type == "ClassicType":
                 config = read_classic_config(config_file)
@@ -76,7 +171,6 @@ def main() -> int:
 
         username = os.environ.get("INPUT_USERNAME", "").strip() or config["username"]
 
-        # Ein gemeinsamer Client für alle Open-Cloud-Abfragen (Bundle, Korblox-Bein, Emote).
         client = RobloxOpenCloudClient(api_key)
 
         with tempfile.TemporaryDirectory(prefix="rbx_gfx_") as tmp:
@@ -85,6 +179,7 @@ def main() -> int:
                 background_kind, background_path = resolve_background(config["background"], work_dir)
             except ValueError as exc:
                 raise PipelineError(str(exc)) from exc
+
             bundle = load_avatar_bundle(
                 username=username,
                 api_key=api_key,
@@ -93,54 +188,31 @@ def main() -> int:
                 client=client,
             )
 
-            # Korblox-Bein vorab laden (nur HearthandsType mit korblox=true).
-            korblox_asset: dict[str, Any] | None = None
-            if gfx_type == "HearthandsType" and bool(config["korblox"]):
-                try:
-                    korblox_asset = client.load_korblox_leg(work_dir)
-                except PipelineError as exc:
-                    raise PipelineError(str(exc)) from exc
-
-            # ClassicType: Emote-/Profilpose vorab auflösen.
-            classic_emote = None
-            classic_pose = str(config.get("pose", "None"))
             if gfx_type == "ClassicType":
-                emote_asset_id = int(config.get("emote_asset_id", 0))
-                if classic_pose == "Equipped":
-                    equipped = client.fetch_equipped_emote(bundle.user_id)
-                    if equipped and equipped.get("emote_asset_id"):
-                        emote_asset_id = int(equipped["emote_asset_id"])
-                        print(
-                            f"[pose] Ausgerüstete Profilpose (Emote {emote_asset_id}) wurde verwendet."
-                        )
-                    else:
-                        print("[pose] Keine ausgerüstete Profilpose gefunden - Pose bleibt 'None'.")
-                if classic_pose == "Emote" and emote_asset_id:
-                    classic_emote = client.load_emote_animation(emote_asset_id, work_dir)
-
-            # Importiere bpy erst nach erfolgreicher API-Abfrage für schnelle Fehlerdiagnose
-            from scripts.blender_render import render_avatar_scene
-
-            render_avatar_scene(
-                blend_path=blend_path,
-                bundle=bundle,
-                output_png=output_path,
-                work_dir=work_dir,
-                material_finish=config["material"],
-                background_kind=background_kind,
-                background_path=background_path,
-                background_value=config["background"],
-                outline=config["outline"],
-                gfx_type=gfx_type,
-                korblox=bool(config["korblox"]),
-                headless=bool(config["headless"]),
-                korblox_asset=korblox_asset,
-                classic_pose=classic_pose if gfx_type == "ClassicType" else "None",
-                classic_emote=classic_emote,
-                classic_rotation_deg=float(config.get("rotation_deg", 0)) if gfx_type == "ClassicType" else 0.0,
-                classic_abstand_oben=float(config.get("abstand_oben", 0)) if gfx_type == "ClassicType" else 0.0,
-                classic_abstand_unten=float(config.get("abstand_unten", 0)) if gfx_type == "ClassicType" else 0.0,
-            )
+                render_classic(
+                    config=config,
+                    bundle=bundle,
+                    client=client,
+                    work_dir=work_dir,
+                    output_png=output_png,
+                    background_kind=background_kind,
+                    background_path=background_path,
+                    background_value=background_value,
+                )
+            else:
+                if not blend_path.is_file():
+                    raise PipelineError(f"Die Blender-Datei '{blend_path.name}' wurde nicht gefunden.")
+                render_hearthands(
+                    config=config,
+                    bundle=bundle,
+                    client=client,
+                    work_dir=work_dir,
+                    output_png=output_png,
+                    blend_path=blend_path,
+                    background_kind=background_kind,
+                    background_path=background_path,
+                    background_value=background_value,
+                )
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
 

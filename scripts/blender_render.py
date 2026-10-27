@@ -13,12 +13,9 @@ from mathutils import Matrix, Quaternion, Vector
 from PIL import Image, ImageDraw
 
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
-from scripts.gfx_layout import compute_spacing_transform
 from scripts.roblox_opencloud import (
     AccessorySpec,
     AvatarBundle,
-    EmoteAnimation,
-    EmoteKeyframe,
     HeadSpec,
     KORBLOX_RIGHT_LEG_ASSET_ID,
 )
@@ -897,103 +894,6 @@ def _place_korblox_leg(
     )
 
 
-def _apply_rotation_around_z(
-    objects: list[bpy.types.Object], center_xy: tuple[float, float], deg: float
-) -> None:
-    """Dreht alle Avatar-Objekte um die vertikale Achse durch center_xy (in
-    Place drehen, nicht um den Avatar herumorbitieren)."""
-    if abs(deg) < 1e-6 or not objects:
-        return
-    rad = math.radians(deg)
-    cz, sz = math.cos(rad), math.sin(rad)
-    rot = np.array([[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
-    center = np.array([center_xy[0], center_xy[1], 0.0], dtype=np.float64)
-    for obj in objects:
-        mw = np.array(obj.matrix_world, dtype=np.float64)
-        pos = mw[:3, 3]
-        dp = pos - np.array([center_xy[0], center_xy[1], pos[2]], dtype=np.float64)
-        mw[:3, 3] = center + rot @ dp
-        mw[:3, :3] = rot @ mw[:3, :3]
-        obj.matrix_world = Matrix(mw.tolist())
-
-
-def _apply_scale_around_center(
-    objects: list[bpy.types.Object], center: np.ndarray, scale: float
-) -> None:
-    if abs(scale - 1.0) < 1e-9 or not objects:
-        return
-    for obj in objects:
-        mw = np.array(obj.matrix_world, dtype=np.float64)
-        mw[:3, 3] = center + scale * (mw[:3, 3] - center)
-        mw[:3, :3] = mw[:3, :3] * scale
-        obj.matrix_world = Matrix(mw.tolist())
-
-
-def _apply_emote_pose_to_armature(preview_keyframe: EmoteKeyframe | None) -> bool:
-    """Trägt die Posen einer Emote-Keyframe auf das Armature der Szene auf."""
-    if preview_keyframe is None:
-        return False
-    armature = bpy.data.objects.get("Armature")
-    if armature is None or armature.type != "ARMATURE":
-        armature = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
-    if armature is None:
-        print("[pose] Kein Armature-Objekt in der Szene - Emote-Pose kann nicht angewendet werden.")
-        return False
-
-    # Roblox-Teilname -> Blender-Knochen des WomanRig-Armatures.
-    # Keine Garantie auf 1:1-Deckung (R15-Emote-Posen heben Teile wie
-    # RightUpperArm, das Rig kennt nur R.Arm): beste Annäherung, nie fatal.
-    bone_by_part: dict[str, str | None] = {
-        "Head": "Head",
-        "RightUpperArm": "R.Arm",
-        "LeftUpperArm": "L.Arm",
-        "RightLowerArm": "R.Arm",
-        "LeftLowerArm": "L.Arm",
-        "RightHand": "R.Arm",
-        "LeftHand": "L.Arm",
-        "RightUpperLeg": "R.Leg",
-        "LeftUpperLeg": "L.Leg",
-        "RightLowerLeg": "R.Leg",
-        "LeftLowerLeg": "L.Leg",
-        "RightFoot": "Foot",
-        "LeftFoot": "Foot",
-        "R.Arm": "R.Arm",
-        "L.Arm": "L.Arm",
-        "R.Leg": "R.Leg",
-        "L.Leg": "L.Leg",
-        "Root": None,
-        "UpperTorso": None,
-        "LowerTorso": None,
-        "HumanoidRootPart": None,
-    }
-
-    pose_bones = armature.pose.bones
-    applied = 0
-    for part_name in sorted(preview_keyframe.poses):
-        bone_name = bone_by_part.get(part_name)
-        if bone_name is None or bone_name not in pose_bones:
-            continue
-        cf = preview_keyframe.poses[part_name]
-        rot_bl = T_RBX_TO_BL @ np.array(cf[3:], dtype=np.float64).reshape(3, 3) @ T_RBX_TO_BL.T
-        try:
-            quat = Quaternion(rot_bl.tolist())
-        except Exception:
-            continue
-        pb = pose_bones[bone_name]
-        pb.rotation_mode = "QUATERNION"
-        pb.rotation_quaternion = quat
-        applied += 1
-
-    if applied:
-        print(
-            f"[pose] Emote-Pose auf {applied} Knochen angewendet "
-            f"(Vorschau-Moment t={preview_keyframe.time})."
-        )
-    else:
-        print("[pose] Keine Emote-Pose konnte auf einen Knochen abgebildet werden.")
-    return applied > 0
-
-
 def render_avatar_scene(
     blend_path: Path,
     bundle: AvatarBundle,
@@ -1007,17 +907,15 @@ def render_avatar_scene(
     background_path: str | None = None,
     background_value: str = "transparent",
     outline: dict | None = None,
-    gfx_type: str = "HearthandsType",
     korblox: bool = False,
     headless: bool = False,
     korblox_asset: dict[str, Any] | None = None,
-    classic_pose: str = "None",
-    classic_emote: EmoteAnimation | None = None,
-    classic_rotation_deg: float = 0.0,
-    classic_abstand_oben: float = 0.0,
-    classic_abstand_unten: float = 0.0,
 ) -> None:
-    """Öffnet WomanRig.blend, richtet Avatar/Background ein und rendert mit Cycles."""
+    """Öffnet WomanRig.blend, richtet Avatar/Background ein und rendert mit Cycles.
+
+    Nur für den GFX-Typ 'HearthandsType' (R6, WomanRig.blend, korblox, headless).
+    ClassicType verwendet scripts/classic_render.py und öffnet NICHT diese Datei.
+    """
     bpy.ops.wm.open_mainfile(filepath=str(blend_path.resolve()))
     scene = bpy.context.scene
     # Entferne die externe HDRI aus dem geladenen Blend und nutze stattdessen
@@ -1190,7 +1088,7 @@ def render_avatar_scene(
         render_objects.append(acc_obj)
 
     # 4b. Korblox: rechtes R6-Bein durch das Korblox Deathspeaker Right Leg ersetzen (HearthandsType)
-    if gfx_type == "HearthandsType" and korblox and korblox_asset is not None:
+    if korblox and korblox_asset is not None:
         leg_obj = _find_right_leg_object(rig_body_objects)
         if leg_obj is not None:
             _place_korblox_leg(
@@ -1203,51 +1101,6 @@ def render_avatar_scene(
             )
         else:
             print("[korblox] Rechtes Rig-Bein nicht gefunden - Korblox-Ersatz wird uebersprungen.")
-
-    # 4c. ClassicType: Emote-/Profilpose auf das Armature anwenden
-    if gfx_type == "ClassicType" and classic_emote is not None and classic_pose in {"Equipped", "Emote"}:
-        _apply_emote_pose_to_armature(classic_emote.preview_keyframe)
-
-    # 4d. ClassicType: Drehung um die vertikale Achse und Abstand von oben/unten
-    if gfx_type == "ClassicType" and (
-        classic_rotation_deg or classic_abstand_oben or classic_abstand_unten
-    ):
-        bb = _rig_body_bbox(render_objects)
-        if bb is None:
-            print("[classic] Keine Avatar-Geometrie fuer Drehung/Abstand gefunden.")
-        else:
-            lo, hi = bb
-            avatar_height = float(hi[2] - lo[2])
-            center_xy = (float((lo[0] + hi[0]) / 2.0), float((lo[1] + hi[1]) / 2.0))
-            center_z = float((lo[2] + hi[2]) / 2.0)
-
-            if classic_rotation_deg:
-                _apply_rotation_around_z(render_objects, center_xy, classic_rotation_deg)
-
-            camera = scene.camera
-            ortho_scale = 4.0
-            if camera is not None and camera.data is not None and camera.data.type == "ORTHO":
-                ortho_scale = float(camera.data.ortho_scale)
-            scale, margin_world = compute_spacing_transform(
-                avatar_height, ortho_scale, res_y, classic_abstand_oben, classic_abstand_unten
-            )
-            _apply_scale_around_center(render_objects, np.array([center_xy[0], center_xy[1], center_z]), scale)
-
-            # Nach der Skalierung vertikal so verschieben, dass oben genau
-            # abstand_oben Prozent der Avatar-Hoehe bis zum oberen Bildrand bleiben.
-            if scale != 1.0 or abs(margin_world) > 1e-9:
-                camera_z = float(camera.location.z) if camera is not None else 3.8
-                top_world = camera_z + ortho_scale / 2.0
-                # Neue Oberkante nach Skalierung um den Avatar-Mittelpunkt.
-                z_top = center_z + scale * (float(hi[2]) - center_z)
-                delta_z = (top_world - margin_world) - z_top
-                if abs(delta_z) > 1e-6:
-                    for obj in render_objects:
-                        obj.matrix_world.translation.z += delta_z
-                    print(
-                        f"[classic] Avatar vertikal um {delta_z:+.2f} verschoben "
-                        f"(AbstandOben={classic_abstand_oben}, AbstandUnten={classic_abstand_unten})."
-                    )
 
     # 5. Kamera, Studio-Licht, Render-Engine und unveränderliche Ausgabeoptionen
     # sind in WomanRig.blend gespeichert. Zur Laufzeit wird ausschließlich der
