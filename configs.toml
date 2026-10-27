@@ -5,7 +5,7 @@ username = "Alamer_Roblox"
 # direkte http(s)-Bild-URL (max. 50 MB), lokaler Motivname (Originalfarbe) oder
 # "Farbordner/Motiv" für eine bestimmte Variante, z. B. "lila/herzen-konfetti".
 # Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP.
-background = "sternnebel"
+background = "blau/sternnebel"
 
 # Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
 material = "Glossy"
