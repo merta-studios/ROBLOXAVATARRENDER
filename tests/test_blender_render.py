@@ -14,7 +14,10 @@ from scripts.blender_render import (
     GLOSS_ROUGHNESS,
     _bake_head_composite_texture,
     _clone_rig_material,
+    _prepare_custom_head_texture,
+    _build_blender_mesh_from_rbx,
 )
+from scripts.rbx_formats import MeshData
 from scripts.configure_blend_scene import (
     CAMERA_LOCATION,
     CAMERA_ORTHO_SCALE,
@@ -88,6 +91,44 @@ class RenderRegressionTests(unittest.TestCase):
             out = _bake_head_composite_texture(SKIN, str(face_path), Path(tmp) / 'head.png')
             img = Image.open(out).convert('RGB')
         self.assertEqual(img.getpixel((512, 512)), SKIN)
+
+    def test_custom_head_texture_uses_skin_for_alpha_without_replacing_opaque_face(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            custom_path = Path(tmp) / "dynamic_head.png"
+            opaque_path = Path(tmp) / "opaque_head.png"
+            image = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+            ImageDraw.Draw(image).rectangle((2, 2, 5, 5), fill=(30, 15, 10, 255))
+            image.save(custom_path)
+            opaque = Image.new("RGBA", (8, 8), (25, 15, 10, 255))
+            opaque.save(opaque_path)
+
+            composited = _prepare_custom_head_texture(SKIN, str(custom_path), Path(tmp) / "composite.png")
+            skin_pixel = Image.open(composited).convert("RGB").getpixel((0, 0))
+            face_pixel = Image.open(composited).convert("RGB").getpixel((3, 3))
+            opaque_result = _prepare_custom_head_texture(
+                SKIN, str(opaque_path), Path(tmp) / "unused.png"
+            )
+
+        self.assertEqual(skin_pixel, SKIN)
+        self.assertEqual(face_pixel, (30, 15, 10))
+        self.assertEqual(opaque_result, str(opaque_path))
+
+    def test_custom_head_mesh_keeps_its_authored_uvs(self):
+        mesh_data = MeshData(
+            version="test",
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            normals=[],
+            uvs=[(0.1, 0.2), (0.8, 0.2), (0.1, 0.9)],
+            colors=None,
+            faces=[(0, 1, 2)],
+        )
+        mesh = _build_blender_mesh_from_rbx(
+            "DynamicHeadUVTest", mesh_data, (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)
+        )
+        actual = [tuple(loop.uv) for loop in mesh.uv_layers[0].data]
+        for uv, expected in zip(actual, [(0.1, 0.2), (0.8, 0.2), (0.1, 0.9)]):
+            self.assertAlmostEqual(uv[0], expected[0])
+            self.assertAlmostEqual(uv[1], expected[1])
 
     def test_blend_scene_preset_uses_fixed_cycles_camera(self):
         configure_scene()
