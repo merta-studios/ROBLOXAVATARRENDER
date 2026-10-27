@@ -30,9 +30,15 @@ def compute_spacing_transform(
     Returns:
         (scale, margin_world)
     """
-    if avatar_height <= 1e-6:
+    if avatar_height <= 1e-6 or ortho_scale <= 1e-6:
         return 1.0, 0.0
+    if image_height_px <= 0:
+        raise ValueError("image_height_px muss positiv sein.")
+
     sum_percent = (abstand_oben + abstand_unten) / 100.0
-    scale = ortho_scale / (avatar_height * (1.0 + sum_percent))
-    margin_world = (abstand_oben / 100.0) * ortho_scale / (1.0 + sum_percent)
+    # Extrem negative Abstaende duerfen nicht zu Division durch 0 oder zu einer
+    # negativen Skalierung fuehren. 0.01 ist ein Schutzlimit, keine Layout-Regel.
+    denominator = max(1.0 + sum_percent, 0.01)
+    scale = ortho_scale / (avatar_height * denominator)
+    margin_world = (abstand_oben / 100.0) * ortho_scale / denominator
     return scale, margin_world

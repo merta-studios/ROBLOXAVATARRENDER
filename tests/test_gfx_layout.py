@@ -1,5 +1,6 @@
 """Reine Layout-Tests für den ClassicType-Abstand (benötigen kein Blender/bpy)."""
 
+import math
 import unittest
 
 from scripts.gfx_layout import compute_spacing_transform
@@ -47,6 +48,15 @@ class GfxLayoutTests(unittest.TestCase):
         screen_px = 2.0 * scale / ORTHO_SCALE * IMAGE_HEIGHT_PX
         # 10% grösser als das Bild -> läuft unten aus dem Rahmen
         self.assertAlmostEqual(screen_px, IMAGE_HEIGHT_PX / 0.9)
+
+        # Auch extreme Fehlkonfigurationen dürfen nicht zu Division durch 0
+        # oder einer negativen Skalierung führen.
+        extreme_scale, extreme_margin = compute_spacing_transform(
+            2.0, ORTHO_SCALE, IMAGE_HEIGHT_PX, -100, -100
+        )
+        self.assertTrue(math.isfinite(extreme_scale))
+        self.assertGreater(extreme_scale, 0.0)
+        self.assertTrue(math.isfinite(extreme_margin))
 
     def test_oben_und_unten_teilen_sich_den_platz(self):
         scale, margin = compute_spacing_transform(2.0, ORTHO_SCALE, IMAGE_HEIGHT_PX, 25, 25)

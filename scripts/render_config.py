@@ -158,6 +158,16 @@ def read_classic_config(path: Path) -> dict[str, Any]:
     outline = parsed.get("outline", {})
     if not isinstance(outline, dict):
         raise ValueError("'outline' muss ein TOML-Abschnitt mit Schlüssel-Wert-Paaren sein.")
+    # ClassicType-Optionen hinter [outline] wären TOML-Unterschlüssel und damit
+    # wirkungslos. Das lieber laut ablehnen, statt still auf Defaults zu fallen.
+    misplaced = [
+        key for key in ("pose", "emote_asset_id", "rotation_deg", "abstand_oben", "abstand_unten")
+        if key in outline
+    ]
+    if misplaced:
+        raise ValueError(
+            f"{', '.join(misplaced)} müssen vor '[outline]' auf der obersten TOML-Ebene stehen."
+        )
     config["outline"] = {**DEFAULT_CONFIG["outline"], **outline}
     outline_cfg = config["outline"]
     try:

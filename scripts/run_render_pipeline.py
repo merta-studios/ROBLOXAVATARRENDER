@@ -26,8 +26,15 @@ if str(REPO_ROOT) not in sys.path:
 
 from PIL import Image
 
-from scripts.roblox_opencloud import PipelineError, _sanitize_secret, RobloxOpenCloudClient, load_avatar_bundle
+from scripts.roblox_opencloud import (
+    AvatarBundle,
+    PipelineError,
+    _sanitize_secret,
+    RobloxOpenCloudClient,
+    load_avatar_bundle,
+)
 from scripts.render_config import (
+    CLASSIC_POSES,
     gfx_type_from_config_path,
     read_classic_config,
     read_config,
@@ -85,11 +92,53 @@ def render_hearthands(
         background_path=background_path,
         background_value=background_value,
         outline=config["outline"],
-        gfx_type="HearthandsType",
         korblox=bool(config["korblox"]),
         headless=bool(config["headless"]),
         korblox_asset=korblox_asset,
     )
+
+
+def resolve_classic_pose(
+    *,
+    config: dict[str, Any],
+    bundle: AvatarBundle,
+    client: RobloxOpenCloudClient,
+    work_dir: Path,
+) -> tuple[str, Any, int]:
+    """Ermittelt ClassicType-Pose und Emote-Asset -- ohne Blender-Abhaengigkeit.
+
+    Bei ``pose = "None"`` werden WEDER ``fetch_equipped_emote`` NOCH
+    ``load_emote_animation`` aufgerufen. Bei ``"Equipped"`` wird die
+    ausgeruestete Profilpose ueber die API ermittelt und anschliessend wie ein
+    normales Emote geladen; bei ``"Emote"`` gilt ``emote_asset_id``.
+    """
+    pose = str(config.get("pose", "None"))
+    if pose not in CLASSIC_POSES:
+        raise PipelineError(
+            f"Ungueltige ClassicType-Pose {pose!r}. Erlaubt: {', '.join(CLASSIC_POSES)}."
+        )
+    emote_asset_id = int(config.get("emote_asset_id", 0) or 0)
+    classic_emote: Any = None
+
+    if pose == "Equipped":
+        equipped = client.fetch_equipped_emote(bundle.user_id)
+        if equipped and equipped.get("emote_asset_id"):
+            emote_asset_id = int(equipped["emote_asset_id"])
+            print(f"[pose] Ausgeruestete Profilpose (Emote {emote_asset_id}) wurde verwendet.")
+        else:
+            print("[pose] Keine ausgeruestete Profilpose gefunden - Pose bleibt 'None'.")
+            pose = "None"
+
+    if pose in ("Equipped", "Emote") and emote_asset_id > 0:
+        classic_emote = client.load_emote_animation(emote_asset_id, work_dir)
+        if classic_emote is None:
+            print(f"[pose] Emote {emote_asset_id} konnte nicht geladen werden - Pose bleibt 'None'.")
+            pose = "None"
+    elif pose == "Emote":
+        print("[pose] Keine gueltige emote_asset_id - Pose bleibt 'None'.")
+        pose = "None"
+
+    return pose, classic_emote, emote_asset_id
 
 
 def render_classic(
@@ -106,22 +155,12 @@ def render_classic(
     """Rendert den ClassicType-GFX (R15, eigene Szene, kein WomanRig.blend)."""
     from scripts.classic_render import render_classic_scene
 
-    classic_pose = str(config.get("pose", "None"))
-    classic_emote = None
-    emote_asset_id = int(config.get("emote_asset_id", 0))
-
-    if classic_pose == "Equipped":
-        equipped = client.fetch_equipped_emote(bundle.user_id)
-        if equipped and equipped.get("emote_asset_id"):
-            emote_asset_id = int(equipped["emote_asset_id"])
-            print(
-                f"[pose] Ausgerüstete Profilpose (Emote {emote_asset_id}) wurde verwendet."
-            )
-        else:
-            print("[pose] Keine ausgerüstete Profilpose gefunden - Pose bleibt 'None'.")
-
-    if classic_pose == "Emote" and emote_asset_id:
-        classic_emote = client.load_emote_animation(emote_asset_id, work_dir)
+    classic_pose, classic_emote, _emote_asset_id = resolve_classic_pose(
+        config=config,
+        bundle=bundle,
+        client=client,
+        work_dir=work_dir,
+    )
 
     render_classic_scene(
         bundle=bundle,
@@ -170,13 +209,17 @@ def main() -> int:
             raise PipelineError(str(exc)) from exc
 
         username = os.environ.get("INPUT_USERNAME", "").strip() or config["username"]
+        # Normalisierter Konfigurationswert fuer Hintergrundfarben. Die
+        # Renderer erhalten zusaetzlich den von resolve_background() ermittelten
+        # Typ und (bei Bildern/URLs) den konkreten Dateipfad.
+        background_value = str(config["background"])
 
         client = RobloxOpenCloudClient(api_key)
 
         with tempfile.TemporaryDirectory(prefix="rbx_gfx_") as tmp:
             work_dir = Path(tmp)
             try:
-                background_kind, background_path = resolve_background(config["background"], work_dir)
+                background_kind, background_path = resolve_background(background_value, work_dir)
             except ValueError as exc:
                 raise PipelineError(str(exc)) from exc
 
@@ -194,7 +237,7 @@ def main() -> int:
                     bundle=bundle,
                     client=client,
                     work_dir=work_dir,
-                    output_png=output_png,
+                    output_png=output_path,
                     background_kind=background_kind,
                     background_path=background_path,
                     background_value=background_value,
@@ -207,7 +250,7 @@ def main() -> int:
                     bundle=bundle,
                     client=client,
                     work_dir=work_dir,
-                    output_png=output_png,
+                    output_png=output_path,
                     blend_path=blend_path,
                     background_kind=background_kind,
                     background_path=background_path,
@@ -226,8 +269,8 @@ def main() -> int:
                     "display_name": bundle.display_name,
                     "user_id": bundle.user_id,
                     "accessories_count": len(bundle.accessories),
-                    "scales": bundle.scales,
-                    "player_avatar_type": bundle.player_avatar_type,
+                    "scales": getattr(bundle, "scales", {}),
+                    "player_avatar_type": getattr(bundle, "player_avatar_type", None),
                     "output_png": str(output_path),
                 },
                 ensure_ascii=False,
