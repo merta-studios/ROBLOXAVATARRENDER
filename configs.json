@@ -1,4 +1,13 @@
 {
+  "_hinweise": {
+    "username": "Roblox-Benutzername, z. B. MertaStudios. Hier keinen @-Prefix nötig.",
+    "background": "Erlaubt: 'transparent'; Hex-Farbe '#RGB' oder '#RRGGBB'; direkte http(s)-URL zu einem Bild (max. 50 MB); oder Dateiname mit/ohne Endung in backgrounds/. Lokal: PNG, JPG/JPEG, WebP, TIFF oder BMP.",
+    "material": "Erlaubt sind genau 'Glossy' (bisheriger Glanz) und 'Matt' (matt, ohne Klarlack).",
+    "outline.thickness_percent": "Umrandungsdicke in Prozent der gesamten Bildbreite, Dezimalzahlen erlaubt, Bereich 0 bis 100. Bei 2000 px ist 1 = 20 px. 0 schaltet die Umrandung aus.",
+    "outline.outside": "true = Umrandung nach außen vom Avatar weg; false = Umrandung nach innen auf den Avatar.",
+    "outline.fade_start_percent": "Ab welchem Anteil der Umrandungsdicke die Transparenz zunimmt, Bereich 0 bis 100. 0 = Fade über die ganze Dicke; 50 = erste Hälfte voll sichtbar, danach Fade; 100 = durchgehend voll sichtbar.",
+    "outline.color": "Erlaubt: Hex-Farbe '#RRGGBB' oder Kurzform '#RGB', außerdem 'white' oder 'black'."
+  },
   "username": "MertaStudios",
   "background": "transparent",
   "material": "Glossy",

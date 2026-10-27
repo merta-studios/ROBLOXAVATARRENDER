@@ -64,13 +64,15 @@ class RenderRegressionTests(unittest.TestCase):
         self.assertAlmostEqual(shader.inputs["Roughness"].default_value, 0.82)
         self.assertEqual(shader.inputs["Coat Weight"].default_value, 0.0)
 
-    def test_configure_keeps_an_existing_environment_texture(self):
+    def test_configure_removes_hdris_from_world_shader(self):
         world = bpy.data.worlds.new("HDRIWorld")
         world.use_nodes = True
         tree = world.node_tree
         tree.nodes.clear()
         env = tree.nodes.new("ShaderNodeTexEnvironment")
-        env.image = bpy.data.images.new("TestHDRI", width=4, height=2)
+        env_name = env.name
+        hdri_name = "TestHDRI"
+        env.image = bpy.data.images.new(hdri_name, width=4, height=2)
         background = tree.nodes.new("ShaderNodeBackground")
         output = tree.nodes.new("ShaderNodeOutputWorld")
         tree.links.new(env.outputs["Color"], background.inputs["Color"])
@@ -79,9 +81,12 @@ class RenderRegressionTests(unittest.TestCase):
 
         _setup_studio_lighting_and_world(bpy.context.scene)
 
-        self.assertIsNotNone(tree.nodes.get(env.name))
-        self.assertTrue(any(link.from_node == env for link in tree.links))
-        self.assertTrue(any(link.to_node == output for link in tree.links))
+        self.assertIsNone(tree.nodes.get(env_name))
+        self.assertFalse(any(node.type == "TEX_ENVIRONMENT" for node in tree.nodes))
+        self.assertIsNone(bpy.data.images.get(hdri_name))
+        world_outputs = [node for node in tree.nodes if node.type == "OUTPUT_WORLD"]
+        self.assertTrue(world_outputs)
+        self.assertTrue(any(link.to_node in world_outputs for link in tree.links))
 
     def test_outline_uses_image_width_and_stays_outside_avatar(self):
         with tempfile.TemporaryDirectory() as tmp:

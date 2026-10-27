@@ -12,7 +12,7 @@ Vollautomatischer GitHub-Actions-Renderer für Roblox **R6-Avatare** auf Basis v
 2. **Automatischer R6-Render (`.github/workflows/render-avatar.yml`)**:
    - Lädt über die **Roblox Open Cloud API** (`ROBLOX_API_KEY`) die Körperfarben, klassische Kleidung (`Shirt`, `Pants`, `T-Shirt`), das Gesicht (`Face`), den Kopf (`Head`) und alle starren R6-Accessoires (`Hat`, `Hair`, `Face`, `Neck`, `Shoulder`, `Front`, `Back`, `Waist`).
    - Öffnet [`WomanRig.blend`](./WomanRig.blend) in **Blender 5.0 (`bpy`)**, wendet den hochauflösenden R6-Texturatlas auf alle fertig geposten Körperteile an und platziert Kopf sowie Accessoires mit exakt denselben Principled-BSDF-Materialeinstellungen auf dem Rig.
-   - Engine, feste orthografische Kamera, Studio-Licht und Auflösung sind in `WomanRig.blend` gespeichert. Die wiederhergestellte Environment Texture/HDRI wird weiter als Render-Umgebung verwendet und von der Pipeline nicht überschrieben. Die Bild-Plane `Background` wird nur für den gewählten Hintergrund texturiert.
+   - Engine, feste orthografische Kamera, Studio-Licht und Auflösung sind in `WomanRig.blend` gespeichert. Die externe Environment Texture/HDRI wird bewusst deaktiviert; stattdessen nutzt die Pipeline eine stabile Studio-Verlaufsumgebung, damit fehlende EXR-Dateien kein magenta/rosa Render verursachen. Die Bild-Plane `Background` wird nur für den gewählten Hintergrund texturiert.
    - Rendert mit **Blender Cycles** als **RGBA**. Bei `background: "transparent"` bleibt der Bildhintergrund transparent.
    - Zeigt in der **Workflow-Übersicht (`Summary`) ausschließlich eine Sache**: entweder das fertig gerenderte Bild oder eine präzise Fehlermeldung.
 3. **Auto Merge -> main (`.github/workflows/auto-pr-merge.yml`)**:

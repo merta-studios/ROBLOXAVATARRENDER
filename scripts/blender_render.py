@@ -539,7 +539,9 @@ def _build_blender_mesh_from_rbx(
     return mesh
 
 
-def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
+def _setup_studio_lighting_and_world(
+    scene: bpy.types.Scene, *, add_lights: bool = True
+) -> None:
     """Studio-Licht mit klar definierten Reflexen (glossy Kunststoff-Look).
 
     Roblox-Avatare sind lackierter Kunststoff: Der Glanz entsteht nicht nur
@@ -552,37 +554,44 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
     scene.world = world
     world.use_nodes = True
     tree = world.node_tree
-    has_environment = bool(tree and any(node.type == "TEX_ENVIRONMENT" and node.image for node in tree.nodes))
-    if not has_environment:
-        tree.nodes.clear()
+    # Die gespeicherte HDRI wird aus dem aktiven Shader-Baum entfernt.
+    # Fehlende/verschobene EXR-Dateien erzeugen in Blender ein magenta Bild.
+    old_hdri_images = [
+        node.image for node in tree.nodes
+        if node.type == "TEX_ENVIRONMENT" and node.image is not None
+    ]
+    tree.nodes.clear()
+    for image in old_hdri_images:
+        if image.users == 0:
+            bpy.data.images.remove(image)
 
-        tex_coord = tree.nodes.new("ShaderNodeTexCoord")
-        sep_xyz = tree.nodes.new("ShaderNodeSeparateXYZ")
-        ramp = tree.nodes.new("ShaderNodeValToRGB")
-        ramp.color_ramp.interpolation = "LINEAR"
-        stops: list[tuple[float, tuple[float, float, float, float]]] = [
-            (0.00, (0.020, 0.022, 0.028, 1.0)),  # unten: dunkler Boden
-            (0.38, (0.080, 0.090, 0.110, 1.0)),
-            (0.50, (0.520, 0.550, 0.620, 1.0)),  # Horizontkante = Reflexionslinie
-            (0.56, (0.180, 0.190, 0.215, 1.0)),
-            (1.00, (0.620, 0.650, 0.720, 1.0)),  # oben: heller Himmel/Softbox
-        ]
-        elements = ramp.color_ramp.elements
-        while len(elements) > 1:
-            elements.remove(elements[-1])
-        elements[0].position, elements[0].color = stops[0]
-        for pos, col in stops[1:]:
-            el = elements.new(pos)
-            el.color = col
+    tex_coord = tree.nodes.new("ShaderNodeTexCoord")
+    sep_xyz = tree.nodes.new("ShaderNodeSeparateXYZ")
+    ramp = tree.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.interpolation = "LINEAR"
+    stops: list[tuple[float, tuple[float, float, float, float]]] = [
+        (0.00, (0.020, 0.022, 0.028, 1.0)),  # unten: dunkler Boden
+        (0.38, (0.080, 0.090, 0.110, 1.0)),
+        (0.50, (0.520, 0.550, 0.620, 1.0)),  # Horizontkante = Reflexionslinie
+        (0.56, (0.180, 0.190, 0.215, 1.0)),
+        (1.00, (0.620, 0.650, 0.720, 1.0)),  # oben: heller Himmel/Softbox
+    ]
+    elements = ramp.color_ramp.elements
+    while len(elements) > 1:
+        elements.remove(elements[-1])
+    elements[0].position, elements[0].color = stops[0]
+    for pos, col in stops[1:]:
+        el = elements.new(pos)
+        el.color = col
 
-        bg = tree.nodes.new("ShaderNodeBackground")
-        bg.inputs["Strength"].default_value = 0.75
-        out = tree.nodes.new("ShaderNodeOutputWorld")
+    bg = tree.nodes.new("ShaderNodeBackground")
+    bg.inputs["Strength"].default_value = 0.75
+    out = tree.nodes.new("ShaderNodeOutputWorld")
 
-        tree.links.new(tex_coord.outputs["Generated"], sep_xyz.inputs["Vector"])
-        tree.links.new(sep_xyz.outputs["Z"], ramp.inputs["Fac"])
-        tree.links.new(ramp.outputs["Color"], bg.inputs["Color"])
-        tree.links.new(bg.outputs["Background"], out.inputs["Surface"])
+    tree.links.new(tex_coord.outputs["Generated"], sep_xyz.inputs["Vector"])
+    tree.links.new(sep_xyz.outputs["Z"], ramp.inputs["Fac"])
+    tree.links.new(ramp.outputs["Color"], bg.inputs["Color"])
+    tree.links.new(bg.outputs["Background"], out.inputs["Surface"])
     def add_area_light(
         name: str,
         loc: tuple[float, float, float],
@@ -603,18 +612,19 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
         direction = Vector(target) - Vector(loc)
         lobj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
-    # GFX-Setup: grosse, weiche Softboxen -> gleichmäßiger Glanz statt harter
-    # weisser Rechteck-Reflexe auf dem Kunststoff.
-    add_area_light("GFX_KeyLight", (-2.8, -4.6, 5.4), (0.0, 0.0, 3.4), 150.0, 3.4,
-                   (1.0, 0.98, 0.95), shape="DISK")
-    add_area_light("GFX_FillLight", (3.6, -4.2, 2.9), (0.0, 0.0, 2.8), 90.0, 4.2,
-                   (0.92, 0.95, 1.0), shape="DISK")
-    add_area_light("GFX_RimLight", (0.8, 3.8, 5.4), (0.0, 0.0, 3.6), 130.0, 2.6,
-                   (1.0, 1.0, 1.0), shape="DISK")
-    add_area_light("GFX_TopSoftbox", (0.0, -1.2, 7.4), (0.0, 0.0, 4.4), 110.0, 3.4,
-                   (1.0, 1.0, 1.0), shape="DISK")
-    add_area_light("GFX_Kicker", (3.0, -1.4, 4.4), (0.0, 0.0, 3.8), 55.0, 1.6,
-                   (1.0, 0.99, 0.97), shape="DISK")
+    if add_lights:
+        # GFX-Setup: grosse, weiche Softboxen -> gleichmäßiger Glanz statt harter
+        # weisser Rechteck-Reflexe auf dem Kunststoff.
+        add_area_light("GFX_KeyLight", (-2.8, -4.6, 5.4), (0.0, 0.0, 3.4), 150.0, 3.4,
+                       (1.0, 0.98, 0.95), shape="DISK")
+        add_area_light("GFX_FillLight", (3.6, -4.2, 2.9), (0.0, 0.0, 2.8), 90.0, 4.2,
+                       (0.92, 0.95, 1.0), shape="DISK")
+        add_area_light("GFX_RimLight", (0.8, 3.8, 5.4), (0.0, 0.0, 3.6), 130.0, 2.6,
+                       (1.0, 1.0, 1.0), shape="DISK")
+        add_area_light("GFX_TopSoftbox", (0.0, -1.2, 7.4), (0.0, 0.0, 4.4), 110.0, 3.4,
+                       (1.0, 1.0, 1.0), shape="DISK")
+        add_area_light("GFX_Kicker", (3.0, -1.4, 4.4), (0.0, 0.0, 3.8), 55.0, 1.6,
+                       (1.0, 0.99, 0.97), shape="DISK")
 
 
 def _log_scene_diagnostics(scene: bpy.types.Scene, render_objects: list[bpy.types.Object]) -> None:
@@ -782,6 +792,9 @@ def render_avatar_scene(
     """Öffnet WomanRig.blend, richtet Avatar/Background ein und rendert mit Cycles."""
     bpy.ops.wm.open_mainfile(filepath=str(blend_path.resolve()))
     scene = bpy.context.scene
+    # Entferne die externe HDRI aus dem geladenen Blend und nutze stattdessen
+    # die stabile Studio-Umgebung. Die gespeicherten Softboxen bleiben erhalten.
+    _setup_studio_lighting_and_world(scene, add_lights=False)
     background_plane = _assign_background_texture(
         background_kind, background_path, background_value, work_dir
     )
