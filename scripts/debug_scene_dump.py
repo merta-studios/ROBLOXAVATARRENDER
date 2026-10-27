@@ -119,9 +119,6 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-
 
 def dump_thumbnails(user_id: int) -> None:
     """Roblox-Thumbnails laden, um den Soll-Zustand zu sehen."""
@@ -163,3 +160,6 @@ def dump_thumbnails(user_id: int) -> None:
                     print(f"[thumb]   gespeichert {name} {len(img.content)} bytes")
         except Exception as exc:
             print(f"[thumb] {name} fehlgeschlagen: {exc}")
+
+if __name__ == "__main__":
+    raise SystemExit(main())
