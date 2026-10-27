@@ -14,7 +14,7 @@ Die gemeinsamen Hintergründe bleiben im geteilten Ordner [`backgrounds/`](./bac
    - **Material**: `Glossy` (bisheriger Glanz) oder `Matt` (hohe Roughness, kein Klarlack).
    - **Umrandung**: Dicke in Prozent der Bildbreite, Position innen/außen, Transparenz-Fade ab einem prozentualen Dickenanteil und Farbe als Hex, `white` oder `black`. Bei 2000 px Bildbreite entspricht 1 % genau 20 px; `0` deaktiviert sie.
 2. **Automatischer Render (`.github/workflows/render-avatar.yml`)**:
-   - Lädt über die **Roblox Open Cloud API** (`ROBLOX_API_KEY`) die Avatar-Daten des Nutzers und öffnet `WomanRig.blend` in **Blender 5.0 (`bpy`)**.
+   - Lädt über die **Roblox Open Cloud API** (`ROBLOX_API_KEY`) die Avatar-Daten des Nutzers. Nur `HearthandsType` öffnet `WomanRig.blend` in **Blender 5.0 (`bpy`)**; `ClassicType` baut eine eigene leere Szene.
    - Rendert mit **Blender Cycles** als **RGBA**. Bei `background: "transparent"` bleibt der Bildhintergrund transparent.
    - Zeigt in der **Workflow-Übersicht (`Summary`) ausschließlich eine Sache**: entweder das fertig gerenderte Bild oder eine präzise Fehlermeldung.
 
@@ -29,7 +29,9 @@ Kopf & Gesicht: Dynamic-/Custom-Heads behalten ihre eigene Mesh-UV-Map und Kopft
 
 ## GFX-Typ "ClassicType"
 
-Der zweite Ordner [`ClassicType/`](./ClassicType/) enthält eine eigene [`configs.toml`](./ClassicType/configs.toml) mit `username`, `outline`, `background`, `material` und weiteren Einstellungen. Der Avatar wird anders geladen: als **R15 komplett von der Roblox Open Cloud API** (`GET /cloud/v4/avatar/users/{userId}`) – ohne Layered Clothing (Asset-Typen 64 bis 72) und ohne Accessoires vom Typ "Equipment".
+Der zweite Ordner [`ClassicType/`](./ClassicType/) enthält eine eigene [`configs.toml`](./ClassicType/configs.toml) mit `username`, `outline`, `background`, `material` und weiteren Einstellungen. Der Avatar wird anders geladen: als **R15 komplett über die Roblox Avatar/Open-Cloud-API** – ohne Layered Clothing (Asset-Typen 64 bis 72) und ohne Accessoires vom Typ "Equipment". Der öffentliche v4-Endpunkt benötigt ein `.ROBLOSECURITY`-Cookie; deshalb nutzt der Client den funktionierenden öffentlichen v2-Endpunkt (`fetch_avatar_metadata_v4()` kapselt das).
+
+**Strikte Trennung:** `ClassicType` öffnet **`WomanRig.blend` nicht**. `scripts/classic_render.py` baut eine eigene leere Blender-Szene mit Kamera, Licht und Ortho-Projektion. `scripts/blender_render.py` gehört ausschließlich zu `HearthandsType` und erhält keine ClassicType-Parameter. Da noch kein R15-Rig-Blend existiert, sind die sechs Körperfarben aktuell **farbige Blöcke als Platzhalter**; geladene Accessoires sind bereits echte Meshes mit UVs/Texturen. Emote-Keyframes werden ohne Armatur nur näherungsweise auf die Blöcke übertragen. Bei `pose = "None"` wird kein Emote geladen und keine Herz-Pose angewendet. Hintergrund und Umrandung werden nach einem transparenten Render als gemeinsame PNG-Nachbearbeitung in `scripts/image_compositing.py` gesetzt.
 
 Weitere ClassicType-Einstellungen:
 
@@ -39,6 +41,15 @@ Weitere ClassicType-Einstellungen:
 - **`abstand_oben` / `abstand_unten`**: Abstand vom oberen bzw. unteren Bildrand in Prozent der Avatar-Höhe (Länge zwischen höchstem und tiefstem Punkt des 3D-Modells). `100` = eine komplette Avatar-Höhe Platz vor dem Avatar, `10` = 10 Prozent davon, `-10` = der Avatar rutscht bereits zu 10% in den Rand hinein.
 
 Umrandungs-Einstellungen (`[outline]`) funktionieren wie bei HearthandsType.
+
+## Lokale Prüfung
+
+```bash
+python3 -m py_compile scripts/*.py tests/*.py
+python3 -m unittest discover -s tests -v
+```
+
+Ohne installiertes `bpy` laufen genau die 19 reinen Python-Tests; die Blender-Regressionstests werden nur in der CI gesammelt. Die Render-Pfade selbst benötigen `bpy==5.0.1` und das GitHub-Secret `ROBLOX_API_KEY`.
 
 ## Auto Merge & Bereinigung
 

@@ -8,10 +8,10 @@ from typing import Any
 
 import bpy
 import numpy as np
-from scipy.ndimage import distance_transform_edt
-from mathutils import Matrix, Quaternion, Vector
+from mathutils import Matrix, Vector
 from PIL import Image, ImageDraw
 
+from scripts.image_compositing import apply_avatar_outline as _apply_avatar_outline
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.roblox_opencloud import (
     AccessorySpec,
@@ -362,7 +362,7 @@ def _prepare_custom_head_texture(
     """Preserve a custom head's own UV texture, filling only transparent pixels with BodyColor.
 
     DynamicHead ColorMaps are authored for the head mesh's UV layout. Replacing
-    them with a projected classic face distorts or erases the actual face. When
+    them with a projected R6 standard face distorts or erases the actual face. When
     the map contains alpha, its transparent areas are the skin-tone mask rather
     than holes in the head, so fill those areas with the avatar's HeadColor.
     """
@@ -375,7 +375,7 @@ def _prepare_custom_head_texture(
     return texture_path
 
 
-def _create_classic_r6_head_mesh(name: str = "R6ClassicHeadMesh") -> bpy.types.Mesh:
+def _create_r6_head_mesh(name: str = "R6HeadMesh") -> bpy.types.Mesh:
     """Erzeugt das authentische klassische Roblox R6 SpecialMesh(Head) mit glatten Bevels & Front-UVs."""
     # Rotationsprofil in (r, z_rel) von -0.60 bis +0.60 (Radius 0.60, Bevel-Radius 0.28)
     profile: list[tuple[float, float]] = [(0.0, -0.60), (0.16, -0.60), (0.32, -0.60)]
@@ -744,43 +744,6 @@ def _assign_background_texture(
     return plane
 
 
-def _apply_avatar_outline(
-    output_png: Path,
-    avatar_png: Path,
-    *,
-    thickness_percent: float,
-    outside: bool,
-    fade_start_percent: float,
-    color: tuple[int, int, int],
-) -> None:
-    """Composite a percentage-width outline from the isolated avatar alpha pass."""
-    with Image.open(output_png) as rendered, Image.open(avatar_png) as avatar:
-        base = rendered.convert("RGBA")
-        alpha = np.asarray(avatar.convert("RGBA").getchannel("A"), dtype=np.uint8)
-    if alpha.shape != (base.height, base.width):
-        raise RuntimeError("Die Alpha-Maske für die Umrandung hat eine abweichende Bildgröße.")
-
-    mask = alpha >= 128
-    if not mask.any():
-        raise RuntimeError("Für die Umrandung wurde kein Avatar im isolierten Render gefunden.")
-    width = thickness_percent * base.width / 100.0
-    distances = distance_transform_edt(~mask if outside else mask)
-    valid = (~mask if outside else mask) & (distances <= width + 0.5)
-    progress = np.clip((distances - 0.5) / max(width, 1e-6), 0.0, 1.0)
-    fade = fade_start_percent / 100.0
-    if fade >= 1.0:
-        opacity = np.ones_like(progress)
-    else:
-        opacity = np.where(progress <= fade, 1.0, (1.0 - progress) / (1.0 - fade))
-    opacity = np.where(valid, opacity, 0.0)
-
-    overlay_arr = np.zeros((base.height, base.width, 4), dtype=np.uint8)
-    overlay_arr[:, :, :3] = color
-    overlay_arr[:, :, 3] = np.clip(opacity * 255.0, 0, 255).astype(np.uint8)
-    overlay = Image.fromarray(overlay_arr, "RGBA")
-    Image.alpha_composite(base, overlay).save(output_png, format="PNG")
-
-
 def _evaluated_world_bbox(obj: bpy.types.Object) -> tuple[np.ndarray, np.ndarray] | None:
     """Welt-Achsen-aligned-Bounding-Box eines Objekts (evaluiert, inkl. Modifiers)."""
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -914,7 +877,7 @@ def render_avatar_scene(
     """Öffnet WomanRig.blend, richtet Avatar/Background ein und rendert mit Cycles.
 
     Nur für den GFX-Typ 'HearthandsType' (R6, WomanRig.blend, korblox, headless).
-    ClassicType verwendet scripts/classic_render.py und öffnet NICHT diese Datei.
+    Der R15-Renderpfad baut eine eigene Szene und oeffnet diese Datei nicht.
     """
     bpy.ops.wm.open_mainfile(filepath=str(blend_path.resolve()))
     scene = bpy.context.scene
@@ -970,7 +933,7 @@ def render_avatar_scene(
                 and Path(head_spec.custom_texture_path).is_file()
             )
             # Native dynamic/custom head maps use their own UVs. Only heads
-            # without an authored map get a projected classic R6 face fallback.
+            # without an authored map get a projected R6 face fallback.
             use_front_proj = not has_custom_texture and head_spec.face_texture_path is not None
             h_mesh = _build_blender_mesh_from_rbx(
                 "AvatarHeadMesh",
@@ -994,7 +957,7 @@ def render_avatar_scene(
             else:
                 head_tex = None
         else:
-            h_mesh = _create_classic_r6_head_mesh("AvatarClassicHeadMesh")
+            h_mesh = _create_r6_head_mesh("AvatarR6HeadMesh")
             head_tex = _bake_head_composite_texture(
                 head_spec.skin_rgb,
                 head_spec.face_texture_path,
