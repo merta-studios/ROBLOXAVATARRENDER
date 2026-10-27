@@ -28,6 +28,12 @@ from scripts.rbx_formats import (
 
 DEFAULT_SMILE_ASSET_ID = 144075659
 
+# Korblox Deathspeaker Right Leg - das berühmte, 17.000 Robux teure Bein des
+# Korblox-Deathspeaker-Bundles (offiziell von Roblox, nicht mehr im Verkauf).
+# Asset-ID 139607718, Asset-Typ Right Leg (31).
+# https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg
+KORBLOX_RIGHT_LEG_ASSET_ID = 139607718
+
 # R6-kompatible starre Accessoire-Typen (Layered Clothing 64..72 wird in R6 bewusst ignoriert)
 RIGID_ACCESSORY_TYPE_IDS = {
     8,   # Hat
@@ -116,6 +122,32 @@ class AvatarBundle:
     body_colors: dict[str, tuple[int, int, int]]
     head: HeadSpec
     accessories: list[AccessorySpec] = field(default_factory=list)
+    # ClassicType: R15-Skalierung (z. B. height/width/head) und Avatar-Typ, die
+    # von der Open Cloud v4-Avatar-API geliefert werden. Geometrisch wird nicht
+    # darauf skaliert (das feste Rig bleibt massgeblich); die Werte dienen der
+    # Dokumentation im Status-Report.
+    scales: dict[str, float] = field(default_factory=dict)
+    player_avatar_type: int | None = None
+
+
+@dataclass
+class EmoteKeyframe:
+    time: float
+    poses: dict[str, tuple[float, ...]]
+
+
+@dataclass
+class EmoteAnimation:
+    asset_id: int
+    keyframes: list[EmoteKeyframe]
+
+    @property
+    def preview_keyframe(self) -> EmoteKeyframe | None:
+        """Der Moment der Emote-Vorschau: die erste Keyframe (Zeit 0.0) der
+        Animation, andernfalls die frueheste vorhandene Keyframe."""
+        if not self.keyframes:
+            return None
+        return self.keyframes[0]
 
 
 def _sanitize_secret(text: str, secret: str) -> str:
@@ -282,6 +314,166 @@ class RobloxOpenCloudClient:
         raise PipelineError(
             f"Avatar-Daten für User-ID {user_id} konnten nicht geladen werden (HTTP {resp.status_code})."
         )
+
+    def fetch_avatar_metadata_v4(self, user_id: int) -> dict[str, Any]:
+        """Lädt die R15-Avatar-Definition (Farben, Skalierung, getragene Assets)
+        eines Nutzers ueber die Open Cloud v4 Avatar API (benutzt x-api-key)."""
+        resp = self._request(
+            "GET",
+            f"https://apis.roblox.com/cloud/v4/avatar/users/{user_id}",
+            use_api_key=True,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        detail = _sanitize_secret(resp.text[:300], self.api_key)
+        if resp.status_code in (401, 403):
+            raise PipelineError(
+                f"Der ROBLOX_API_KEY darf die Open Cloud v4 Avatar-API nicht nutzen "
+                f"(HTTP {resp.status_code}). Detail: {detail}"
+            )
+        raise PipelineError(
+            f"R15-Avatar-Daten für User-ID {user_id} konnten nicht geladen werden "
+            f"(HTTP {resp.status_code}): {detail}"
+        )
+
+    def fetch_equipped_emote(self, user_id: int) -> dict[str, Any] | None:
+        """Liefert die am Nutzerprofil ausgerüstete Emote-Pose.
+
+        Liest https://avatar.roblox.com/v1/avatar/thumbnail-customizations aus.
+        Dieser Endpunkt arbeitet mit dem .ROBLOSECURITY-Cookie (eigener Account)
+        - mit nur einem Open Cloud API Key antwortet er mit 401. In dem Fall
+        wird None zurueckgegeben und der Caller auf "None"-Pose zurueckfällt.
+        """
+        resp = self._request("GET", "https://avatar.roblox.com/v1/avatar/thumbnail-customizations")
+        if resp.status_code in (401, 403):
+            print(
+                "[avatar] Profilpose konnte nicht abgefragt werden (HTTP "
+                f"{resp.status_code} - der Endpunkt braucht einen .ROBLOSECURITY-Cookie). "
+                "Fallback auf Pose 'None'."
+            )
+            return None
+        if resp.status_code != 200:
+            print(f"[avatar] Profilpose konnte nicht abgefragt werden (HTTP {resp.status_code}). Fallback auf Pose 'None'.")
+            return None
+        try:
+            data = resp.json()
+        except ValueError:
+            return None
+        customizations = data.get("avatarThumbnailCustomizations") or []
+        for entry in customizations:
+            if int(entry.get("thumbnailType") or 0) == 2:  # FullBody (Körperbild)
+                camera = entry.get("camera") or {}
+                return {
+                    "emote_asset_id": int(entry.get("emoteAssetId") or 0),
+                    "y_rot_deg": float((camera or {}).get("yRotDeg") or 0.0),
+                }
+        return None
+
+    def load_emote_animation(self, asset_id: int, work_dir: Path) -> EmoteAnimation | None:
+        """Laedt eine Emote-Animation (Asset-Typ Animation/PoseAnimation) per
+        Open Cloud Asset Delivery und parst die Keyframes aus.
+
+        Das System rat den Vorschau-Moment nicht aus: die Animation kommt
+        komplett aus der API, der verwendete Moment ist die erste Keyframe
+        (Zeit 0.0), also genau der Anfang der Emote-Vorschau.
+        """
+        try:
+            raw = self.fetch_asset_bytes(asset_id)
+        except PipelineError as exc:
+            print(f"[emote] Emote {asset_id} konnte nicht geladen werden: {exc}")
+            return None
+
+        roots = parse_rbx_model(raw)
+        nodes: list[RbxNode] = []
+        for rt in roots:
+            nodes.append(rt)
+            nodes.extend(rt.descendants())
+
+        sequences = [n for n in nodes if n.class_name == "KeyframeSequence"]
+        if not sequences:
+            print(f"[emote] Emote {asset_id} enthaelt keine KeyframeSequence.")
+            return None
+
+        keyframes: list[EmoteKeyframe] = []
+        for kf_node in sequences[0].children:
+            if kf_node.class_name != "Keyframe":
+                continue
+            time = float(kf_node.prop("Time", default=0.0) or 0.0)
+            poses: dict[str, tuple[float, ...]] = {}
+            for pose_node in kf_node.children:
+                if pose_node.class_name != "Pose":
+                    continue
+                cf = pose_node.prop("CFrame")
+                if cf:
+                    poses[pose_node.name] = tuple(float(x) for x in cf)
+            keyframes.append(EmoteKeyframe(time=time, poses=poses))
+
+        keyframes.sort(key=lambda kf: kf.time)
+        if not keyframes:
+            print(f"[emote] Emote {asset_id} enthaelt keine Keyframes.")
+            return None
+
+        print(f"[emote] Emote {asset_id}: {len(keyframes)} Keyframes geladen, Vorschau-Moment t={keyframes[0].time}.")
+        return EmoteAnimation(asset_id=asset_id, keyframes=keyframes)
+
+    def load_korblox_leg(self, work_dir: Path) -> dict[str, Any]:
+        """Laedt das Korblox Deathspeaker Right Leg (Asset-ID 139607718) per
+        Open Cloud Asset Delivery und gibt Mesh, Textur und Basisfarbe zurueck."""
+        work_dir.mkdir(parents=True, exist_ok=True)
+        raw = self.fetch_asset_bytes(KORBLOX_RIGHT_LEG_ASSET_ID)
+        roots = parse_rbx_model(raw)
+        nodes: list[RbxNode] = []
+        for rt in roots:
+            nodes.append(rt)
+            nodes.extend(rt.descendants())
+
+        mesh_part = next((n for n in nodes if n.class_name == "MeshPart"), None)
+        legacy_handle = next((n for n in nodes if n.name == "Handle"), None)
+        sm = legacy_handle.find_first_child_of_class("SpecialMesh") if legacy_handle is not None else None
+
+        texture_node = mesh_part if mesh_part is not None else sm
+        color_node = mesh_part if mesh_part is not None else legacy_handle
+
+        mid: int | None = None
+        if mesh_part is not None:
+            mid = extract_asset_id(mesh_part.prop("MeshId", "MeshContent"))
+        elif sm is not None:
+            mid = extract_asset_id(sm.prop("MeshId", "MeshContent", "MeshId"))
+        if not mid:
+            raise PipelineError(f"Korblox-Asset {KORBLOX_RIGHT_LEG_ASSET_ID} enthaelt kein Mesh.")
+
+        mdata = parse_rbx_mesh(self.fetch_asset_bytes(mid))
+
+        tex_id: int | None = None
+        if texture_node is not None:
+            sa = texture_node.find_first_child_of_class("SurfaceAppearance")
+            if sa is not None:
+                tex_id = extract_asset_id(sa.prop("ColorMap", "ColorMapContent"))
+        if not tex_id and texture_node is not None:
+            tex_id = extract_asset_id(
+                texture_node.prop("TextureID", "TextureId", "TextureContent")
+            )
+
+        tex_path: str | None = None
+        if tex_id:
+            timg = self.fetch_image(tex_id)
+            tex_path = str(work_dir / f"korblox_tex_{tex_id}.png")
+            timg.save(tex_path, format="PNG")
+
+        base_color: tuple[float, float, float] = (0.8, 0.8, 0.8)
+        if color_node is not None:
+            col_raw = color_node.prop("Color", "Color3uint8")
+            if isinstance(col_raw, tuple) and len(col_raw) == 3:
+                base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
+            elif color_node.prop("BrickColor") is not None:
+                brgb = brick_color_to_rgb(int(color_node.prop("BrickColor")))
+                base_color = (brgb[0] / 255.0, brgb[1] / 255.0, brgb[2] / 255.0)
+
+        return {
+            "mesh": mdata,
+            "texture_path": tex_path,
+            "base_color": base_color,
+        }
 
     def fetch_asset_bytes(self, asset_id: int) -> bytes:
         """Lädt Rohbytes eines Assets über die Roblox Open Cloud Asset Delivery API."""
@@ -611,14 +803,42 @@ def _compute_meshpart_scale(node: RbxNode, mesh: MeshData) -> tuple[float, float
     return (sx, sy, sz)
 
 
-def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBundle:
-    """Lädt den kompletten R6-Avatar eines Roblox-Nutzers über die Open Cloud API."""
+def load_avatar_bundle(
+    username: str,
+    api_key: str,
+    work_dir: Path,
+    gfx_type: str = "HearthandsType",
+    client: RobloxOpenCloudClient | None = None,
+) -> AvatarBundle:
+    """Lädt den kompletten Avatar eines Roblox-Nutzers über die Open Cloud API.
+
+    Für gfx_type="ClassicType" wird der Avatar als R15 komplett von der Open
+    Cloud v4 Avatar API geladen (Farben, Skalierung, getragene Assets). Layered
+    Clothing (Asset-Typen 64-72) sowie Accessoires vom Typ "Equipment" werden
+    nicht geladen.
+    """
     work_dir.mkdir(parents=True, exist_ok=True)
-    client = RobloxOpenCloudClient(api_key)
+    own_client = client is None
+    client = client or RobloxOpenCloudClient(api_key)
     client.validate_api_key()
 
     user_id, canonical_name, display_name = client.resolve_user(username)
-    meta = client.fetch_avatar_metadata(user_id)
+    if gfx_type == "ClassicType":
+        meta = client.fetch_avatar_metadata_v4(user_id)
+        scales_raw = meta.get("scales") or {}
+        scales = {str(k): float(v) for k, v in scales_raw.items() if isinstance(v, (int, float))}
+        player_avatar_type = meta.get("playerAvatarType")
+        if isinstance(player_avatar_type, bool):
+            player_avatar_type = None
+        elif player_avatar_type is not None:
+            try:
+                player_avatar_type = int(player_avatar_type)
+            except (TypeError, ValueError):
+                player_avatar_type = None
+    else:
+        meta = client.fetch_avatar_metadata(user_id)
+        scales = {}
+        player_avatar_type = None
     body_colors = _extract_body_colors(meta)
 
     assets = meta.get("assets") or []
@@ -736,11 +956,15 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
                     head_spec.kind = "custom_mesh"
                     head_spec.mesh = mdata
 
-    # 4. Starre R6-Accessoires laden
+    # 4. Starre R6-Accessoires laden (ClassicType: keine Layered Clothing und
+    # keine Accessoires vom Typ "Equipment").
     accessories: list[AccessorySpec] = []
     for item in assets:
         atype_id = int((item.get("assetType") or {}).get("id") or 0)
+        atype_name = str((item.get("assetType") or {}).get("name") or "").casefold()
         if atype_id not in RIGID_ACCESSORY_TYPE_IDS:
+            continue
+        if atype_name == "equipment":
             continue
 
         aid = int(item["id"])
@@ -890,4 +1114,6 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
         body_colors=body_colors,
         head=head_spec,
         accessories=accessories,
+        scales=scales,
+        player_avatar_type=player_avatar_type,
     )

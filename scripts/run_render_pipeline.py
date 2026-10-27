@@ -9,6 +9,7 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
+from typing import Any
 
 # Stelle sicher, dass das Repository-Root im Python-Pfad liegt
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -18,7 +19,12 @@ if str(REPO_ROOT) not in sys.path:
 from PIL import Image
 
 from scripts.roblox_opencloud import PipelineError, _sanitize_secret, load_avatar_bundle
-from scripts.render_config import read_config, resolve_background
+from scripts.render_config import (
+    gfx_type_from_config_path,
+    read_classic_config,
+    read_config,
+    resolve_background,
+)
 
 
 def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> None:
@@ -41,10 +47,11 @@ def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rendert einen Roblox R6 Avatar mit WomanRig.blend in Blender Cycles.")
-    parser.add_argument("--config-file", default="configs.toml", help="Pfad zur kommentierten TOML-Konfiguration für Avatar und Render.")
+    parser.add_argument("--config-file", default="HearthandsType/configs.toml", help="Pfad zur kommentierten TOML-Konfiguration für Avatar und Render. Der übergeordnete Ordner bestimmt den GFX-Typ (HearthandsType oder ClassicType).")
     parser.add_argument("--blend-file", default="WomanRig.blend", help="Pfad zur WomanRig.blend Datei.")
     parser.add_argument("--output", default="render/latest.png", help="Zielpfad für das gerenderte transparente PNG.")
     parser.add_argument("--status-json", default="/tmp/render_status.json", help="Pfad für den strukturierten Ergebnis-Report.")
+    parser.add_argument("--gfx-type", default=None, help="GFX-Typ: 'HearthandsType' oder 'ClassicType'. Wird aus dem Konfigurations-Ordner abgeleitet, falls nicht angegeben.")
     args = parser.parse_args()
 
     api_key = os.environ.get("ROBLOX_API_KEY", "")
@@ -58,11 +65,18 @@ def main() -> int:
             raise PipelineError(f"Die Blender-Datei '{blend_path.name}' wurde im Repository nicht gefunden.")
 
         try:
-            config = read_config(config_file)
+            gfx_type = gfx_type_from_config_path(config_file, args.gfx_type)
+            if gfx_type == "ClassicType":
+                config = read_classic_config(config_file)
+            else:
+                config = read_config(config_file)
         except ValueError as exc:
             raise PipelineError(str(exc)) from exc
 
         username = os.environ.get("INPUT_USERNAME", "").strip() or config["username"]
+
+        # Ein gemeinsamer Client für alle Open-Cloud-Abfragen (Bundle, Korblox-Bein, Emote).
+        client = RobloxOpenCloudClient(api_key)
 
         with tempfile.TemporaryDirectory(prefix="rbx_gfx_") as tmp:
             work_dir = Path(tmp)
@@ -70,7 +84,38 @@ def main() -> int:
                 background_kind, background_path = resolve_background(config["background"], work_dir)
             except ValueError as exc:
                 raise PipelineError(str(exc)) from exc
-            bundle = load_avatar_bundle(username=username, api_key=api_key, work_dir=work_dir)
+            bundle = load_avatar_bundle(
+                username=username,
+                api_key=api_key,
+                work_dir=work_dir,
+                gfx_type=gfx_type,
+                client=client,
+            )
+
+            # Korblox-Bein vorab laden (nur HearthandsType mit korblox=true).
+            korblox_asset: dict[str, Any] | None = None
+            if gfx_type == "HearthandsType" and bool(config["korblox"]):
+                try:
+                    korblox_asset = client.load_korblox_leg(work_dir)
+                except PipelineError as exc:
+                    raise PipelineError(str(exc)) from exc
+
+            # ClassicType: Emote-/Profilpose vorab auflösen.
+            classic_emote = None
+            classic_pose = str(config.get("pose", "None"))
+            if gfx_type == "ClassicType":
+                emote_asset_id = int(config.get("emote_asset_id", 0))
+                if classic_pose == "Equipped":
+                    equipped = client.fetch_equipped_emote(bundle.user_id)
+                    if equipped and equipped.get("emote_asset_id"):
+                        emote_asset_id = int(equipped["emote_asset_id"])
+                        print(
+                            f"[pose] Ausgerüstete Profilpose (Emote {emote_asset_id}) wurde verwendet."
+                        )
+                    else:
+                        print("[pose] Keine ausgerüstete Profilpose gefunden - Pose bleibt 'None'.")
+                if classic_pose == "Emote" and emote_asset_id:
+                    classic_emote = client.load_emote_animation(emote_asset_id, work_dir)
 
             # Importiere bpy erst nach erfolgreicher API-Abfrage für schnelle Fehlerdiagnose
             from scripts.blender_render import render_avatar_scene
@@ -85,6 +130,15 @@ def main() -> int:
                 background_path=background_path,
                 background_value=config["background"],
                 outline=config["outline"],
+                gfx_type=gfx_type,
+                korblox=bool(config["korblox"]),
+                headless=bool(config["headless"]),
+                korblox_asset=korblox_asset,
+                classic_pose=classic_pose if gfx_type == "ClassicType" else "None",
+                classic_emote=classic_emote,
+                classic_rotation_deg=float(config.get("rotation_deg", 0)) if gfx_type == "ClassicType" else 0.0,
+                classic_abstand_oben=float(config.get("abstand_oben", 0)) if gfx_type == "ClassicType" else 0.0,
+                classic_abstand_unten=float(config.get("abstand_unten", 0)) if gfx_type == "ClassicType" else 0.0,
             )
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
@@ -94,10 +148,13 @@ def main() -> int:
             json.dumps(
                 {
                     "ok": True,
+                    "gfx_type": gfx_type,
                     "username": bundle.username,
                     "display_name": bundle.display_name,
                     "user_id": bundle.user_id,
                     "accessories_count": len(bundle.accessories),
+                    "scales": bundle.scales,
+                    "player_avatar_type": bundle.player_avatar_type,
                     "output_png": str(output_path),
                 },
                 ensure_ascii=False,

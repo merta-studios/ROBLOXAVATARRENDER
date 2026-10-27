@@ -20,8 +20,8 @@ Diese Regeln gelten für jede KI-Agent-Session in diesem Repository (`merta-stud
   3. Der Workflow `.github/workflows/auto-pr-merge.yml` ("Auto Merge -> main") merged den Branch danach automatisch per `git merge --no-ff` direkt nach `main` und pusht `main`. Du musst dafür nichts weiter tun.
 
 ## 3. GFX-Render-Workflow & Fehlerdiagnose
-- Die Datei `configs.toml` im Repository-Root enthält den Roblox-Benutzernamen, Hintergrund, Material und die Umrandungs-Einstellungen.
-- Änderungen an `configs.toml`, `backgrounds/` oder `WomanRig.blend` auf `main` starten `.github/workflows/render-avatar.yml` (kann auch per `gh workflow run render-avatar.yml --ref main` ausgelöst werden).
+- Die Konfigurationsdateien leben in `HearthandsType/configs.toml` (Preppy Hearthands Type, R6-Rig) und `ClassicType/configs.toml` (R15 über Open Cloud API) und enthalten Roblox-Benutzernamen, Hintergrund, Material und die Umrandungs-Einstellungen.
+- Änderungen an `HearthandsType/`, `ClassicType/`, `backgrounds/` oder `WomanRig.blend` auf `main` starten `.github/workflows/render-avatar.yml` (kann auch per `gh workflow run render-avatar.yml --ref main` ausgelöst werden).
 - In der Workflow-Übersicht (`GITHUB_STEP_SUMMARY`) steht **ausschließlich** entweder:
   - das fertig gerenderte PNG mit dem in `configs.toml` gewählten Hintergrund (gespeichert im Rolling-Tag/Release `latest-render`, ohne die Git-Historie von `main` aufzublähen), **oder**
   - die exakte Fehlermeldung zum direkten Beheben durch dich als Agent.

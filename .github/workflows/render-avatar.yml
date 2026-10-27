@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'configs.toml'
+      - 'HearthandsType/**'
+      - 'ClassicType/**'
       - 'backgrounds/**'
       - 'WomanRig.blend'
       - 'scripts/**'
@@ -14,9 +15,14 @@ on:
   workflow_dispatch:
     inputs:
       username:
-        description: 'Optionaler Roblox-Benutzername (leer lassen, um configs.toml zu nutzen)'
+        description: 'Optionaler Roblox-Benutzername (leer lassen, um die Konfigurationsdatei des GFX-Typs zu nutzen)'
         required: false
         type: string
+      gfx-type:
+        description: 'GFX-Typ: HearthandsType (Preppy Hearthands Type) oder ClassicType'
+        required: false
+        type: string
+        default: 'HearthandsType'
 
 permissions:
   contents: write
@@ -27,7 +33,7 @@ concurrency:
 
 jobs:
   render:
-    name: R6 Avatar GFX Render (Blender Cycles)
+    name: R6/R15 Avatar GFX Render (Blender Cycles)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
@@ -49,8 +55,11 @@ jobs:
           ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_USERNAME: ${{ inputs.username }}
+          GFX_TYPE: ${{ inputs.gfx-type }}
         run: |
           set -uo pipefail
+
+          CONFIG_FILE="${GFX_TYPE}/configs.toml"
 
           # 1. System-Bibliotheken für Headless Blender 5.x Cycles (Xvfb / OpenGL)
           if ! sudo apt-get update -qq >/tmp/setup.log 2>&1 || \
@@ -83,10 +92,11 @@ jobs:
 
           mkdir -p /tmp/render_out
 
-          # 4. Roblox-Avatar und Render-Konfiguration aus configs.toml ausführen
+          # 4. Roblox-Avatar und Render-Konfiguration des gewählten GFX-Typs ausführen
           if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX +render -noreset" \
                python scripts/run_render_pipeline.py \
-                 --config-file configs.toml \
+                 --config-file "$CONFIG_FILE" \
+                 --gfx-type "$GFX_TYPE" \
                  --blend-file WomanRig.blend \
                  --output /tmp/render_out/avatar.png \
                  --status-json /tmp/render_status.json \
@@ -106,7 +116,7 @@ jobs:
 
           BLOB_SHA=$(git hash-object -w /tmp/render_out/avatar.png)
           TREE_SHA=$(printf "100644 blob %s\tavatar.png\n" "$BLOB_SHA" | git mktree)
-          COMMIT_SHA=$(git commit-tree "$TREE_SHA" -m "Latest R6 avatar render")
+          COMMIT_SHA=$(git commit-tree "$TREE_SHA" -m "Latest avatar render ($GFX_TYPE)")
 
           if ! git push --force origin "${COMMIT_SHA}:refs/tags/latest-render" >/tmp/push_err.log 2>&1; then
             {
@@ -120,8 +130,8 @@ jobs:
           gh release delete latest-render --yes >/dev/null 2>&1 || true
           gh release create latest-render /tmp/render_out/avatar.png \
             --target "$COMMIT_SHA" \
-            --title "Aktuelles Avatar Render" \
-            --notes "Automatisch gerenderter Roblox R6 Avatar (Blender Cycles, Hintergrund gemäß configs.toml)." \
+            --title "Aktuelles Avatar Render ($GFX_TYPE)" \
+            --notes "Automatisch gerenderter Roblox Avatar ($GFX_TYPE, Blender Cycles, Hintergrund gemäß $CONFIG_FILE)." \
             >/dev/null 2>&1 || true
 
           echo "RENDER_IMAGE_URL=https://github.com/${GITHUB_REPOSITORY}/blob/${COMMIT_SHA}/avatar.png?raw=true" >> "$GITHUB_ENV"
