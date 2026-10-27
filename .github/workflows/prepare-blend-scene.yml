@@ -1,0 +1,39 @@
+name: Prepare Saved Blender Scene
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  configure:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install Blender Python runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libegl1 libgl1 libgl1-mesa-dri libglx-mesa0 libgbm1 libgles2 \
+            libxrender1 libxfixes3 libxi6 libxkbcommon0 libsm6 libice6 \
+            libxcursor1 libxinerama1 libxrandr2
+          pip install --quiet -r requirements.txt
+      - name: Save fixed camera, lighting and render settings to WomanRig.blend
+        run: python scripts/configure_blend_scene.py --blend-file WomanRig.blend
+      - name: Commit the configured Blend file to this session branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add WomanRig.blend
+          if git diff --cached --quiet; then
+            echo "WomanRig.blend already contains the saved scene preset."
+          else
+            git commit -m "Save fixed render scene in WomanRig.blend"
+            git push origin "HEAD:${GITHUB_REF}"
+          fi

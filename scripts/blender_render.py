@@ -8,7 +8,7 @@ from pathlib import Path
 import bpy
 import numpy as np
 from mathutils import Matrix, Vector
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.roblox_opencloud import AccessorySpec, AvatarBundle, HeadSpec
@@ -125,6 +125,10 @@ GLOSS_SPECULAR_IOR_LEVEL = 0.55
 GLOSS_COAT_WEIGHT = 0.32
 GLOSS_COAT_ROUGHNESS = 0.06
 GLOSS_IOR = 1.5
+
+# Sehr kleiner gemeinsamer Versatz nach unten für nachgeladene Teile (Blender-Z).
+# 0,01 Stud ≈ wenige Renderpixel und reicht für sauber anliegenden Schmuck.
+AVATAR_ATTACHMENT_DROP = 0.01
 
 
 def _clone_rig_material(
@@ -256,14 +260,40 @@ def _face_overlay_rgba(face_img: Image.Image) -> Image.Image:
             arr[:, w - ring :, :3].reshape(-1, 3),
         ]
     )
-    # Kein einfarbiger Rand -> Vollbild-Artwork, nicht keyen.
-    if float(border.std(axis=0).max()) > 12.0:
-        return img
-
+    border_spread = float(border.std(axis=0).max())
     bg = np.median(border.astype(np.float32), axis=0)
-    dist = np.abs(arr[:, :, :3].astype(np.float32) - bg).max(axis=2)
-    inner, outer = 18.0, 52.0
-    alpha = np.clip((dist - inner) / (outer - inner), 0.0, 1.0)
+
+    if border_spread <= 12.0:
+        # Gleichmäßiger Rand -> Farbe global keyen, mit weichem Übergang.
+        dist = np.abs(arr[:, :, :3].astype(np.float32) - bg).max(axis=2)
+        inner, outer = 18.0, 52.0
+        alpha = np.clip((dist - inner) / (outer - inner), 0.0, 1.0)
+    elif float(_rgb_luma(tuple(bg))) <= 72.0:
+        # Manche Face-/Makeup-Thumbnails haben einen schwarzen oder verlaufenden
+        # dunklen Canvas statt eines einfarbigen Hintergrunds. Ein globaler
+        # Color-Key erkennt sie nicht und übermalt dann die gesamte Kopfhaut.
+        # Entferne ausschließlich dunkle Pixel, die mit dem Bildrand verbunden
+        # sind; dunkle Augen/Mund bleiben erhalten, da sie innen liegen.
+        rgb = arr[:, :, :3].astype(np.float32)
+        luma = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
+        candidate = Image.fromarray(
+            np.where(luma <= 96.0, 0, 255).astype(np.uint8), mode="L"
+        ).copy()
+        width, height = candidate.size
+        edge_points = (
+            [(x, 0) for x in range(width)]
+            + [(x, height - 1) for x in range(width)]
+            + [(0, y) for y in range(1, height - 1)]
+            + [(width - 1, y) for y in range(1, height - 1)]
+        )
+        for point in edge_points:
+            if candidate.getpixel(point) == 0:
+                ImageDraw.floodfill(candidate, point, 128)
+        alpha = (np.asarray(candidate) != 128).astype(np.float32)
+    else:
+        # Rand enthält kein plausibles dunkles Canvas und ist kein uniformer
+        # Hintergrund: Das Bild ist vermutlich Vollbild-Artwork.
+        return img
 
     out = arr.copy()
     out[:, :, 3] = np.round(alpha * 255.0).astype(np.int16)
@@ -625,64 +655,6 @@ def _log_scene_diagnostics(scene: bpy.types.Scene, render_objects: list[bpy.type
         )
 
 
-def _setup_auto_framed_camera(
-    scene: bpy.types.Scene,
-    render_objects: list[bpy.types.Object],
-    res_x: int,
-    res_y: int,
-) -> None:
-    """Enger Oberkörper-Ausschnitt mit 2,5 Prozent Abstand über Kopf/Accessoires."""
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    min_pt = np.array([1e9, 1e9, 1e9], dtype=np.float64)
-    max_pt = np.array([-1e9, -1e9, -1e9], dtype=np.float64)
-    found = False
-
-    for obj in render_objects:
-        if obj.hide_render or obj.type != "MESH":
-            continue
-        eval_obj = obj.evaluated_get(depsgraph)
-        try:
-            eval_mesh = eval_obj.to_mesh()
-        except Exception:
-            eval_mesh = None
-        if eval_mesh is not None and len(eval_mesh.vertices) > 0:
-            n = len(eval_mesh.vertices)
-            co = np.empty(n * 3, dtype=np.float32)
-            eval_mesh.vertices.foreach_get("co", co)
-            pts_local = co.reshape(n, 3).astype(np.float64)
-            mw = np.array(eval_obj.matrix_world, dtype=np.float64)
-            pts_world = (pts_local @ mw[:3, :3].T) + mw[:3, 3]
-            min_pt = np.minimum(min_pt, pts_world.min(axis=0))
-            max_pt = np.maximum(max_pt, pts_world.max(axis=0))
-            found = True
-            eval_obj.to_mesh_clear()
-
-    if not found:
-        min_pt = np.array([-1.6, -0.8, 0.0])
-        max_pt = np.array([1.6, 0.8, 5.4])
-
-    cx = float(0.5 * (min_pt[0] + max_pt[0]))
-    # Hüfte des WomanRig liegt bei Z=2.24: nur 0.29 Einheiten Oberschenkel
-    # zeigen. Füße und untere Accessoires sollen die Kamera nicht herauszoomen.
-    bottom = 1.95
-    top = max(float(max_pt[2]), 2.5)
-    top_padding = 0.025
-    frame_height = (top - bottom) / (1.0 - top_padding)
-    center_z = bottom + frame_height * 0.5
-
-    cam_data = bpy.data.cameras.new("GFX_Camera")
-    # Orthografisch: die Oberkante aller Accessoires hat unabhängig von ihrer
-    # Tiefe exakt denselben kleinen Abstand; keine perspektivischen Rand-Clips.
-    cam_data.type = "ORTHO"
-    cam_data.ortho_scale = frame_height * max(1.0, res_x / res_y)
-    cam_data.clip_end = 1000.0
-    cam_obj = bpy.data.objects.new("GFX_Camera", cam_data)
-    scene.collection.objects.link(cam_obj)
-    cam_obj.location = Vector((cx, float(min_pt[1]) - 20.0, center_z))
-    cam_obj.rotation_euler = Vector((0.0, 1.0, 0.0)).to_track_quat("-Z", "Y").to_euler()
-    scene.camera = cam_obj
-
-
 def render_avatar_scene(
     blend_path: Path,
     bundle: AvatarBundle,
@@ -735,7 +707,10 @@ def render_avatar_scene(
     head_spec: HeadSpec = bundle.head
     if head_spec.kind != "headless":
         if head_spec.kind == "custom_mesh" and head_spec.mesh is not None:
-            use_front_proj = head_spec.custom_texture_path is None and head_spec.face_texture_path is not None
+            # SpecialMesh-/Dynamic-Head-Texturen können schwarze Platzhalter-
+            # oder Canvas-Flächen enthalten. In der R6-Darstellung gilt stets
+            # die BodyColor als Haut; nur das Face-Decal wird darüber gelegt.
+            use_front_proj = head_spec.face_texture_path is not None
             h_mesh = _build_blender_mesh_from_rbx(
                 "AvatarHeadMesh",
                 head_spec.mesh,
@@ -743,16 +718,15 @@ def render_avatar_scene(
                 head_spec.mesh_offset,
                 project_front_face_uv=use_front_proj,
             )
-            if head_spec.custom_texture_path:
-                head_tex = head_spec.custom_texture_path
-            elif use_front_proj:
-                head_tex = _bake_head_composite_texture(
+            head_tex = (
+                _bake_head_composite_texture(
                     head_spec.skin_rgb,
                     head_spec.face_texture_path,
                     work_dir / "head_composite.png",
                 )
-            else:
-                head_tex = None
+                if use_front_proj
+                else None
+            )
         else:
             h_mesh = _create_classic_r6_head_mesh("AvatarClassicHeadMesh")
             head_tex = _bake_head_composite_texture(
@@ -775,7 +749,7 @@ def render_avatar_scene(
         h_mesh.materials.append(head_mat)
         head_obj = bpy.data.objects.new("AvatarHead", h_mesh)
         target_collection.objects.link(head_obj)
-        head_obj.location = Vector((0.0, 0.0, 4.5))
+        head_obj.location = Vector((0.0, 0.0, 4.5 - AVATAR_ATTACHMENT_DROP))
         render_objects.append(head_obj)
 
     # 4. Alle starren R6-Accessoires mit denselben Material-Einstellungen platzieren
@@ -837,46 +811,19 @@ def render_avatar_scene(
         acc_obj = bpy.data.objects.new(f"Accessory_{acc.asset_id}_{acc.name[:24]}", acc_mesh)
         target_collection.objects.link(acc_obj)
         acc_obj.matrix_world = Matrix(c_handle_bl.tolist())
+        acc_obj.matrix_world.translation.z -= AVATAR_ATTACHMENT_DROP
         render_objects.append(acc_obj)
 
-    # 5. Studio-Beleuchtung, Kamera & Blender Cycles Render-Konfiguration (transparenter Hintergrund)
+    # 5. Kamera, Studio-Licht, Render-Engine und unveränderliche Ausgabeoptionen
+    # sind in WomanRig.blend gespeichert. Zur Laufzeit wird ausschließlich der
+    # benutzerspezifische Ausgabepfad gesetzt.
     _log_scene_diagnostics(scene, render_objects)
-    _setup_studio_lighting_and_world(scene)
-    _setup_auto_framed_camera(scene, render_objects, res_x, res_y)
-
-    scene.render.engine = "CYCLES"
-    if not hasattr(scene, "cycles"):
-        try:
-            bpy.ops.preferences.addon_enable(module="cycles")
-        except Exception:
-            pass
-    scene.render.film_transparent = True
-    scene.render.resolution_x = res_x
-    scene.render.resolution_y = res_y
-    scene.render.resolution_percentage = 100
-    scene.render.pixel_aspect_x = 1.0
-    scene.render.pixel_aspect_y = 1.0
-    scene.render.use_border = False
-    if hasattr(scene.render.image_settings, "media_type"):
-        scene.render.image_settings.media_type = "IMAGE"
-    scene.render.image_settings.file_format = "PNG"
-    scene.render.image_settings.color_mode = "RGBA"
-    scene.render.image_settings.color_depth = "8"
-    scene.view_settings.view_transform = "Standard"
-    scene.view_settings.look = "None"
-
-    scene.cycles.device = "CPU"
-    scene.cycles.samples = 64
-    scene.cycles.use_denoising = True
-    if hasattr(scene.cycles, "denoiser"):
-        scene.cycles.denoiser = "OPENIMAGEDENOISE"
-    
-    scene.cycles.max_bounces = 4
-    scene.cycles.diffuse_bounces = 1
-    scene.cycles.glossy_bounces = 2
-    scene.cycles.transmission_bounces = 2
-    scene.cycles.volume_bounces = 0
-    scene.cycles.transparent_max_bounces = 4
+    if scene.camera is None:
+        raise RuntimeError("WomanRig.blend enthält keine gespeicherte Render-Kamera.")
+    if scene.render.engine != "CYCLES":
+        raise RuntimeError(
+            f"WomanRig.blend muss mit Cycles gespeichert sein (gefunden: {scene.render.engine})."
+        )
 
     output_png.parent.mkdir(parents=True, exist_ok=True)
     scene.render.filepath = str(output_png.resolve())

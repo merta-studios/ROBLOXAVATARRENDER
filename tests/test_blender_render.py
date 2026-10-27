@@ -5,17 +5,21 @@ from pathlib import Path
 
 import bpy
 import numpy as np
-from bpy_extras.object_utils import world_to_camera_view
-from mathutils import Vector
 from PIL import Image, ImageDraw
 
 from scripts.blender_render import (
+    AVATAR_ATTACHMENT_DROP,
     GLOSS_COAT_ROUGHNESS,
     GLOSS_COAT_WEIGHT,
     GLOSS_ROUGHNESS,
     _bake_head_composite_texture,
     _clone_rig_material,
-    _setup_auto_framed_camera,
+)
+from scripts.configure_blend_scene import (
+    CAMERA_LOCATION,
+    CAMERA_ORTHO_SCALE,
+    RENDER_SIZE,
+    configure_scene,
 )
 
 SKIN = (234, 184, 146)
@@ -85,18 +89,22 @@ class RenderRegressionTests(unittest.TestCase):
             img = Image.open(out).convert('RGB')
         self.assertEqual(img.getpixel((512, 512)), SKIN)
 
-    def test_square_portrait_top_margin_and_thigh_crop(self):
+    def test_blend_scene_preset_uses_fixed_cycles_camera(self):
+        configure_scene()
         scene = bpy.context.scene
-        scene.render.resolution_x = scene.render.resolution_y = 2000
-        bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 3))
-        body = bpy.context.object
-        body.scale = (1, 0.5, 3)
-        bpy.context.view_layer.update()
-        _setup_auto_framed_camera(scene, [body], 2000, 2000)
-        bpy.context.view_layer.update()
-        top = world_to_camera_view(scene, scene.camera, Vector((0, 0, 6)))
-        bottom = world_to_camera_view(scene, scene.camera, Vector((0, 0, 1.95)))
-        self.assertAlmostEqual(top.y, 0.975, places=5)
-        self.assertAlmostEqual(bottom.y, 0.0, places=5)
-        feet = world_to_camera_view(scene, scene.camera, Vector((0, 0, 0)))
-        self.assertLess(feet.y, 0)
+        self.assertEqual(scene.render.engine, "CYCLES")
+        self.assertIsNotNone(scene.camera)
+        self.assertEqual(scene.camera.name, "GFX_Camera")
+        self.assertEqual(tuple(scene.camera.location), CAMERA_LOCATION)
+        self.assertEqual(scene.camera.data.type, "ORTHO")
+        self.assertEqual(scene.camera.data.ortho_scale, CAMERA_ORTHO_SCALE)
+        self.assertEqual(scene.render.resolution_x, RENDER_SIZE)
+        self.assertEqual(scene.render.resolution_y, RENDER_SIZE)
+        self.assertTrue(scene.render.film_transparent)
+        self.assertEqual(
+            len([obj for obj in scene.objects if obj.name.startswith("GFX_") and obj.type == "LIGHT"]),
+            5,
+        )
+
+    def test_loaded_head_and_accessories_share_a_tiny_downward_offset(self):
+        self.assertEqual(AVATAR_ATTACHMENT_DROP, 0.01)
