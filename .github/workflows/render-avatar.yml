@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - arena/17feec3c-robloxavatarrender
     paths:
       - 'username.txt'
       - 'WomanRig.blend'
       - 'scripts/**'
       - 'tests/**'
-      - '.github/workflows/render-avatar.yml'
   workflow_dispatch:
     inputs:
       username:
@@ -133,26 +131,6 @@ jobs:
 
           echo "RENDER_IMAGE_URL=https://github.com/${GITHUB_REPOSITORY}/blob/${COMMIT_SHA}/avatar.png?raw=true" >> "$GITHUB_ENV"
 
-      - name: Temporäre Bildvorschau zur visuellen Kontrolle
-        if: steps.execute.outcome == 'success' && github.ref == 'refs/heads/arena/17feec3c-robloxavatarrender'
-        run: |
-          python - <<'PY'
-          import base64
-          from pathlib import Path
-          from PIL import Image
-
-          image = Image.open('/tmp/render_out/avatar.png').convert('RGBA')
-          image.thumbnail((480, 480), Image.Resampling.LANCZOS)
-          preview = Path('/tmp/avatar-preview.png')
-          image.save(preview, format='PNG', optimize=True)
-          Path('avatar-preview.b64').write_text(base64.b64encode(preview.read_bytes()).decode('ascii'))
-          PY
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add avatar-preview.b64
-          git commit -m "Stage temporary render preview for visual check"
-          git push origin "HEAD:${GITHUB_REF}"
-
       - name: Render-Artefakt speichern
         if: steps.execute.outcome == 'success'
         uses: actions/upload-artifact@v7
@@ -178,17 +156,6 @@ jobs:
             ERR_TEXT=$(cat /tmp/fatal_error.txt)
           else
             ERR_TEXT="Der Render-Workflow wurde abgebrochen oder ist fehlgeschlagen, bevor ein Fehlerbericht geschrieben werden konnte."
-          fi
-
-          # Nur auf dem Session-Branch die exakte Fehlermeldung für CI-Diagnose
-          # hinterlegen; der veröffentlichte Summary-Inhalt bleibt unverändert.
-          if [ "${GITHUB_REF:-}" = "refs/heads/arena/17feec3c-robloxavatarrender" ]; then
-            printf '%s\n' "$ERR_TEXT" >render-diagnostic.txt
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add render-diagnostic.txt
-            git commit -m "Record avatar render failure for diagnosis"
-            git push origin "HEAD:${GITHUB_REF}"
           fi
 
           {
