@@ -1,4 +1,4 @@
-"""Give uploaded previews semantic names and export alternate color palettes."""
+"""Name uploaded previews and keep each palette in its own color folder."""
 from __future__ import annotations
 
 import math
@@ -10,38 +10,52 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 BACKGROUND_DIR = ROOT / "backgrounds"
 
-# Descriptive names, in the numeric order of the uploaded BackgroundN-Preview files.
+# Descriptive design names. Colors are represented only by their parent folder.
 BACKGROUND_NAMES = {
-    1: "pastell-herzen-konfetti",
-    2: "pink-weiss-liquid",
-    3: "violett-schachbrett-tunnel",
-    4: "lila-liquid-marmor",
-    5: "smaragd-energie-wirbel",
-    6: "elektroblau-kreuze",
-    7: "eisblau-glitzer",
-    8: "lavendel-organische-formen",
-    9: "pink-blueten-spritzer",
-    10: "violette-sternexplosion",
-    11: "goldene-sonnenstrahlen",
-    12: "lila-herzen-glitzer",
-    13: "smaragd-neonsterne",
-    14: "nacht-hologramm-prismen",
-    15: "blau-weisse-optikwellen",
-    16: "smaragd-lichtstrahl",
-    17: "eisblau-frostspritzer",
-    18: "violett-kristallsplitter",
-    19: "rosa-liquid-wellen",
-    20: "rot-schwarzer-sternnebel",
+    1: "herzen-konfetti",
+    2: "wirbel-linien",
+    3: "schachbrett-tunnel",
+    4: "marmor-wirbel",
+    5: "energie-wirbel",
+    6: "kreuz-strahl",
+    7: "glitzer-strahl",
+    8: "organische-formen",
+    9: "blueten-spritzer",
+    10: "stern-explosion",
+    11: "sonnenstrahlen",
+    12: "herzen-glitzer",
+    13: "neon-sterne",
+    14: "hologramm-prismen",
+    15: "optikwellen",
+    16: "stern-strahl",
+    17: "frostspritzer",
+    18: "kristallsplitter",
+    19: "fluid-wellen",
+    20: "sternnebel",
 }
 
-# Hue targets; the closest target to each original palette is omitted, so every
-# source receives three genuinely different alternatives.
-PALETTES = {
-    "rot": 4,
-    "blau": 151,
-    "gruen": 92,
-    "gold": 32,
+# Previous flat filenames, kept here so running the script migrates them in place.
+LEGACY_NAMES = {
+    1: "pastell-herzen-konfetti", 2: "pink-weiss-liquid", 3: "violett-schachbrett-tunnel",
+    4: "lila-liquid-marmor", 5: "smaragd-energie-wirbel", 6: "elektroblau-kreuze",
+    7: "eisblau-glitzer", 8: "lavendel-organische-formen", 9: "pink-blueten-spritzer",
+    10: "violette-sternexplosion", 11: "goldene-sonnenstrahlen", 12: "lila-herzen-glitzer",
+    13: "smaragd-neonsterne", 14: "nacht-hologramm-prismen", 15: "blau-weisse-optikwellen",
+    16: "smaragd-lichtstrahl", 17: "eisblau-frostspritzer", 18: "violett-kristallsplitter",
+    19: "rosa-liquid-wellen", 20: "rot-schwarzer-sternnebel",
 }
+
+# Dominant original-image colors, determined from the uploaded previews.
+ORIGINAL_COLORS = {
+    1: "lila", 2: "lila", 3: "lila", 4: "lila", 5: "gruen",
+    6: "blau", 7: "blau", 8: "lila", 9: "pink", 10: "lila",
+    11: "gold", 12: "lila", 13: "tuerkis", 14: "blau", 15: "blau",
+    16: "tuerkis", 17: "blau", 18: "lila", 19: "pink", 20: "rot",
+}
+
+# Hue targets; the closest target to each original palette is omitted, leaving
+# three alternate colors per design. Target hues are stored in Pillow's 0..255 range.
+PALETTES = {"rot": 4, "blau": 151, "gruen": 92, "gold": 32}
 
 
 def _dominant_hue(image: Image.Image) -> float:
@@ -74,40 +88,64 @@ def _make_variant(source: Path, destination: Path, target_hue_byte: int) -> None
     hsv = np.asarray(original.convert("HSV"), dtype=np.uint8).copy()
     hsv[:, :, 0] = ((hsv[:, :, 0].astype(np.int16) + hue_shift) % 256).astype(np.uint8)
     recolored = Image.fromarray(hsv, "HSV").convert("RGBA")
-    # Hue is undefined for grey/white details; retain their original appearance.
     original_arr = np.asarray(original, dtype=np.uint8)
     recolored_arr = np.asarray(recolored, dtype=np.uint8).copy()
     original_hsv = np.asarray(original.convert("HSV"), dtype=np.uint8)
     neutral = original_hsv[:, :, 1] < 24
     recolored_arr[neutral, :3] = original_arr[neutral, :3]
     recolored_arr[:, :, 3] = original_arr[:, :, 3]
+    destination.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(recolored_arr, "RGBA").save(destination, optimize=True)
+
+
+def _organize_design(number: int, name: str) -> None:
+    root_original = BACKGROUND_DIR / f"{name}.png"
+    source_preview = BACKGROUND_DIR / f"Background{number}-Preview.png"
+    legacy_original = BACKGROUND_DIR / f"{LEGACY_NAMES[number]}.png"
+    original = BACKGROUND_DIR / ORIGINAL_COLORS[number] / f"{name}.png"
+
+    # Support numbered uploads, the previous descriptive flat layout, and reruns.
+    if source_preview.is_file():
+        if root_original.exists():
+            raise FileExistsError(f"Beide Quelldateien vorhanden: {source_preview} und {root_original}")
+        source_preview.rename(root_original)
+    if legacy_original.is_file():
+        if root_original.exists():
+            raise FileExistsError(f"Beide alten/neuen Namen vorhanden: {legacy_original} und {root_original}")
+        legacy_original.rename(root_original)
+    if root_original.is_file():
+        original.parent.mkdir(parents=True, exist_ok=True)
+        if original.exists():
+            raise FileExistsError(f"Zieldatei existiert bereits: {original}")
+        root_original.rename(original)
+    if not original.is_file():
+        raise FileNotFoundError(f"Original fehlt: {source_preview.name} oder {original}")
+
+    original_image = Image.open(original).convert("RGBA")
+    source_hue = _dominant_hue(original_image)
+    closest_palette = min(
+        PALETTES,
+        key=lambda color: _hue_distance(source_hue, PALETTES[color] * (360.0 / 255.0)),
+    )
+
+    for color, hue in PALETTES.items():
+        if color == closest_palette:
+            continue
+        old_flat_variant = BACKGROUND_DIR / f"{LEGACY_NAMES[number]}-{color}.png"
+        target = BACKGROUND_DIR / color / f"{name}.png"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if old_flat_variant.is_file():
+            if target.exists():
+                raise FileExistsError(f"Farbvariante ist doppelt vorhanden: {old_flat_variant} und {target}")
+            old_flat_variant.rename(target)
+        elif not target.exists():
+            _make_variant(original, target, hue)
 
 
 def main() -> None:
     for number, name in BACKGROUND_NAMES.items():
-        uploaded = BACKGROUND_DIR / f"Background{number}-Preview.png"
-        named = BACKGROUND_DIR / f"{name}.png"
-        if uploaded.is_file():
-            if named.exists():
-                raise FileExistsError(f"Kann {uploaded.name} nicht nach {named.name} umbenennen: Zieldatei existiert.")
-            uploaded.rename(named)
-        if not named.is_file():
-            raise FileNotFoundError(f"Hintergrund fehlt: {uploaded.name} oder {named.name}")
-
-        original = Image.open(named).convert("RGBA")
-        source_hue = _dominant_hue(original)
-        nearest_palette = min(
-            PALETTES,
-            key=lambda color: _hue_distance(source_hue, PALETTES[color] * (360.0 / 255.0)),
-        )
-        for color, hue in PALETTES.items():
-            if color == nearest_palette:
-                continue
-            output = BACKGROUND_DIR / f"{name}-{color}.png"
-            _make_variant(named, output, hue)
-
-    print(f"Bereit: {len(BACKGROUND_NAMES)} Originale und jeweils drei Farbvarianten in {BACKGROUND_DIR}")
+        _organize_design(number, name)
+    print(f"Bereit: {len(BACKGROUND_NAMES)} Motive mit Farbvarianten in farbigen Unterordnern unter {BACKGROUND_DIR}")
 
 
 if __name__ == "__main__":
