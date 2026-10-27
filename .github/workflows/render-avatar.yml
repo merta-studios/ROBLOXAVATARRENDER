@@ -59,8 +59,24 @@ jobs:
         run: |
           set -uo pipefail
 
-          GFX_TYPE="${GFX_TYPE:-HearthandsType}"
-          CONFIG_FILE="${GFX_TYPE}/configs.toml"
+          # GFX-Typ ermitteln: workflow_dispatch-Input hat Vorrang.
+          # Bei Push-Events wird aus den geänderten Dateien abgeleitet,
+          # welcher GFX-Typ-Ordner betroffen ist (ClassicType oder HearthandsType).
+          if [ "${GFX_TYPE:-}" != "" ]; then
+            CONFIG_FILE="${GFX_TYPE}/configs.toml"
+          else
+            CHANGED=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null || true)
+            if echo "$CHANGED" | grep -qE '^ClassicType/'; then
+              GFX_TYPE="ClassicType"
+              CONFIG_FILE="ClassicType/configs.toml"
+            elif echo "$CHANGED" | grep -qE '^HearthandsType/'; then
+              GFX_TYPE="HearthandsType"
+              CONFIG_FILE="HearthandsType/configs.toml"
+            else
+              GFX_TYPE="HearthandsType"
+              CONFIG_FILE="HearthandsType/configs.toml"
+            fi
+          fi
 
           # 1. System-Bibliotheken für Headless Blender 5.x Cycles (Xvfb / OpenGL)
           if ! sudo apt-get update -qq >/tmp/setup.log 2>&1 || \
