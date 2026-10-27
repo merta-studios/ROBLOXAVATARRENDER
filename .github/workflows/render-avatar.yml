@@ -59,6 +59,7 @@ jobs:
         run: |
           set -uo pipefail
 
+          GFX_TYPE="${GFX_TYPE:-HearthandsType}"
           CONFIG_FILE="${GFX_TYPE}/configs.toml"
 
           # 1. System-Bibliotheken für Headless Blender 5.x Cycles (Xvfb / OpenGL)
