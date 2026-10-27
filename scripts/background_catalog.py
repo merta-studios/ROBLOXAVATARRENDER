@@ -33,3 +33,16 @@ ORIGINAL_COLORS = {
 ORIGINAL_FOLDER_BY_NAME = {
     DESIGN_NAMES[number]: ORIGINAL_COLORS[number] for number in DESIGN_NAMES
 }
+
+# Neue monotone Avatar-Hintergruende. Sie haben bewusst keine Farbvarianten und
+# stehen deshalb nicht in DESIGN_NAMES/ORIGINAL_COLORS (sonst wuerde
+# generate_background_variants.py ungewollt Varianten erzeugen).
+MONOCHROME_ORIGINALS = {
+    "softes-licht": "weiss",
+    "papier-minimal": "weiss",
+    "helle-wellen": "weiss",
+    "deeper-space": "schwarz",
+    "neon-linien": "schwarz",
+    "dunkles-raster": "schwarz",
+}
+ORIGINAL_FOLDER_BY_NAME.update(MONOCHROME_ORIGINALS)

@@ -3,12 +3,16 @@ username = "asilblox0"
 
 # Hintergrund: "transparent", Hex-Farbe #RGB oder #RRGGBB, direkte http(s)-Bild-URL
 # (max. 50 MB), lokaler Motivname (Originalfarbe) oder "Farbordner/Motiv", z. B.
-# "lila/herzen-konfetti". Die Hintergründe selbst wohnen weiterhin im geteilten
-# Ordner backgrounds/ und sind nicht in diesen GFX-Typ-Ordner eingezogen.
+# "lila/herzen-konfetti", "weiss/softes-licht" oder "schwarz/neon-linien".
+# Die Hintergründe selbst wohnen weiterhin im geteilten Ordner backgrounds/
+# und sind nicht in diesen GFX-Typ-Ordner eingezogen.
 background = "transparent"
 
 # Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
 material = "Glossy"
+
+# Classic-Shirt, -Hose, -T-Shirt und Face-Decal werden automatisch als
+# R15-Teiltexturen auf den offiziellen Blocky-Rig gelegt (scripts/r15_clothing.py).
 
 # Dieser GFX-Typ ("ClassicType") lädt den Avatar als R15 komplett über die
 # Roblox Avatar/Open-Cloud-API statt aus dem R6-Rig-Setup von HearthandsType.
