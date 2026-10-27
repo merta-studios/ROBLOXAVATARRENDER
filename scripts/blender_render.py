@@ -7,6 +7,7 @@ from pathlib import Path
 
 import bpy
 import numpy as np
+from scipy.ndimage import distance_transform_edt
 from mathutils import Matrix, Vector
 from PIL import Image, ImageDraw
 
@@ -140,8 +141,9 @@ def _clone_rig_material(
     tint_srgb: tuple[float, float, float] = (1.0, 1.0, 1.0),
     alpha_blend: bool = False,
     transparency: float = 0.0,
+    finish: str = "Glossy",
 ) -> bpy.types.Material:
-    """Erzeugt ein frisches, glänzendes Principled-Material für Körper/Kopf/Accessoires.
+    """Erzeugt ein frisches, konfigurierbares Principled-Material für Avatar-Teile.
 
     Das Rig-Material aus `WomanRig.blend` wird bewusst NICHT kopiert: es ist ein
     komplexer Diffuse/Anisotropic-Glossy-Node-Baum, dessen Texturen auf Windows-
@@ -161,13 +163,15 @@ def _clone_rig_material(
     output = tree.nodes.new("ShaderNodeOutputMaterial")
     tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
 
-    # Glänzender, nichtmetallischer Roblox-Kunststoff, unabhängig vom Albedo.
+    # Glossy behält exakt den bisherigen Kunststoff-Look. Matt entfernt den Klarlack
+    # und streut Reflexe über eine hohe Roughness.
+    is_glossy = finish == "Glossy"
     bsdf.inputs["Metallic"].default_value = 0.0
-    bsdf.inputs["Roughness"].default_value = GLOSS_ROUGHNESS
+    bsdf.inputs["Roughness"].default_value = GLOSS_ROUGHNESS if is_glossy else 0.82
     bsdf.inputs["IOR"].default_value = GLOSS_IOR
-    bsdf.inputs["Specular IOR Level"].default_value = GLOSS_SPECULAR_IOR_LEVEL
-    bsdf.inputs["Coat Weight"].default_value = GLOSS_COAT_WEIGHT
-    bsdf.inputs["Coat Roughness"].default_value = GLOSS_COAT_ROUGHNESS
+    bsdf.inputs["Specular IOR Level"].default_value = GLOSS_SPECULAR_IOR_LEVEL if is_glossy else 0.25
+    bsdf.inputs["Coat Weight"].default_value = GLOSS_COAT_WEIGHT if is_glossy else 0.0
+    bsdf.inputs["Coat Roughness"].default_value = GLOSS_COAT_ROUGHNESS if is_glossy else 1.0
     if bsdf.inputs.get("Coat Tint"):
         bsdf.inputs["Coat Tint"].default_value = (1.0, 1.0, 1.0, 1.0)
     if bsdf.inputs.get("Coat IOR"):
@@ -548,36 +552,37 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
     scene.world = world
     world.use_nodes = True
     tree = world.node_tree
-    tree.nodes.clear()
+    has_environment = bool(tree and any(node.type == "TEX_ENVIRONMENT" and node.image for node in tree.nodes))
+    if not has_environment:
+        tree.nodes.clear()
 
-    tex_coord = tree.nodes.new("ShaderNodeTexCoord")
-    sep_xyz = tree.nodes.new("ShaderNodeSeparateXYZ")
-    ramp = tree.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.interpolation = "LINEAR"
-    stops: list[tuple[float, tuple[float, float, float, float]]] = [
-        (0.00, (0.020, 0.022, 0.028, 1.0)),  # unten: dunkler Boden
-        (0.38, (0.080, 0.090, 0.110, 1.0)),
-        (0.50, (0.520, 0.550, 0.620, 1.0)),  # Horizontkante = Reflexionslinie
-        (0.56, (0.180, 0.190, 0.215, 1.0)),
-        (1.00, (0.620, 0.650, 0.720, 1.0)),  # oben: heller Himmel/Softbox
-    ]
-    elements = ramp.color_ramp.elements
-    while len(elements) > 1:
-        elements.remove(elements[-1])
-    elements[0].position, elements[0].color = stops[0]
-    for pos, col in stops[1:]:
-        el = elements.new(pos)
-        el.color = col
+        tex_coord = tree.nodes.new("ShaderNodeTexCoord")
+        sep_xyz = tree.nodes.new("ShaderNodeSeparateXYZ")
+        ramp = tree.nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.interpolation = "LINEAR"
+        stops: list[tuple[float, tuple[float, float, float, float]]] = [
+            (0.00, (0.020, 0.022, 0.028, 1.0)),  # unten: dunkler Boden
+            (0.38, (0.080, 0.090, 0.110, 1.0)),
+            (0.50, (0.520, 0.550, 0.620, 1.0)),  # Horizontkante = Reflexionslinie
+            (0.56, (0.180, 0.190, 0.215, 1.0)),
+            (1.00, (0.620, 0.650, 0.720, 1.0)),  # oben: heller Himmel/Softbox
+        ]
+        elements = ramp.color_ramp.elements
+        while len(elements) > 1:
+            elements.remove(elements[-1])
+        elements[0].position, elements[0].color = stops[0]
+        for pos, col in stops[1:]:
+            el = elements.new(pos)
+            el.color = col
 
-    bg = tree.nodes.new("ShaderNodeBackground")
-    bg.inputs["Strength"].default_value = 0.75
-    out = tree.nodes.new("ShaderNodeOutputWorld")
+        bg = tree.nodes.new("ShaderNodeBackground")
+        bg.inputs["Strength"].default_value = 0.75
+        out = tree.nodes.new("ShaderNodeOutputWorld")
 
-    tree.links.new(tex_coord.outputs["Generated"], sep_xyz.inputs["Vector"])
-    tree.links.new(sep_xyz.outputs["Z"], ramp.inputs["Fac"])
-    tree.links.new(ramp.outputs["Color"], bg.inputs["Color"])
-    tree.links.new(bg.outputs["Background"], out.inputs["Surface"])
-
+        tree.links.new(tex_coord.outputs["Generated"], sep_xyz.inputs["Vector"])
+        tree.links.new(sep_xyz.outputs["Z"], ramp.inputs["Fac"])
+        tree.links.new(ramp.outputs["Color"], bg.inputs["Color"])
+        tree.links.new(bg.outputs["Background"], out.inputs["Surface"])
     def add_area_light(
         name: str,
         loc: tuple[float, float, float],
@@ -676,6 +681,90 @@ def _log_scene_diagnostics(scene: bpy.types.Scene, render_objects: list[bpy.type
         )
 
 
+def _assign_background_texture(
+    kind: str, image_path: str | None, value: str, work_dir: Path
+) -> bpy.types.Object | None:
+    """Set the image-textured material on the authored Background plane."""
+    plane = bpy.data.objects.get("Background")
+    if kind == "transparent":
+        if plane is not None:
+            plane.hide_render = True
+        return plane
+    if plane is None or plane.type != "MESH":
+        raise RuntimeError("WomanRig.blend muss ein Mesh-Plane-Objekt namens 'Background' enthalten.")
+
+    if kind == "color":
+        from scripts.render_config import normalize_color
+
+        rgb = normalize_color(value)
+        image_path = str(work_dir / "background_color.png")
+        Image.new("RGB", (4, 4), rgb).save(image_path)
+    if not image_path or not Path(image_path).is_file():
+        raise RuntimeError("Die Hintergrund-Bilddatei fehlt.")
+
+    image = bpy.data.images.load(str(Path(image_path).resolve()), check_existing=True)
+    image.colorspace_settings.name = "sRGB"
+    material = bpy.data.materials.new("RenderBackgroundImage")
+    material.use_nodes = True
+    tree = material.node_tree
+    tree.nodes.clear()
+    tex = tree.nodes.new("ShaderNodeTexImage")
+    tex.name = "BackgroundImageTexture"
+    tex.image = image
+    emission = tree.nodes.new("ShaderNodeEmission")
+    output = tree.nodes.new("ShaderNodeOutputMaterial")
+    transparent = tree.nodes.new("ShaderNodeBsdfTransparent")
+    mix = tree.nodes.new("ShaderNodeMixShader")
+    tree.links.new(tex.outputs["Color"], emission.inputs["Color"])
+    tree.links.new(tex.outputs["Alpha"], mix.inputs[0])
+    tree.links.new(transparent.outputs["BSDF"], mix.inputs[1])
+    tree.links.new(emission.outputs["Emission"], mix.inputs[2])
+    tree.links.new(mix.outputs["Shader"], output.inputs["Surface"])
+    if hasattr(material, "surface_render_method"):
+        material.surface_render_method = "BLENDED"
+    plane.data.materials.clear()
+    plane.data.materials.append(material)
+    plane.hide_render = False
+    return plane
+
+
+def _apply_avatar_outline(
+    output_png: Path,
+    avatar_png: Path,
+    *,
+    thickness_percent: float,
+    outside: bool,
+    fade_start_percent: float,
+    color: tuple[int, int, int],
+) -> None:
+    """Composite a percentage-width outline from the isolated avatar alpha pass."""
+    with Image.open(output_png) as rendered, Image.open(avatar_png) as avatar:
+        base = rendered.convert("RGBA")
+        alpha = np.asarray(avatar.convert("RGBA").getchannel("A"), dtype=np.uint8)
+    if alpha.shape != (base.height, base.width):
+        raise RuntimeError("Die Alpha-Maske für die Umrandung hat eine abweichende Bildgröße.")
+
+    mask = alpha >= 128
+    if not mask.any():
+        raise RuntimeError("Für die Umrandung wurde kein Avatar im isolierten Render gefunden.")
+    width = thickness_percent * base.width / 100.0
+    distances = distance_transform_edt(~mask if outside else mask)
+    valid = (~mask if outside else mask) & (distances <= width + 0.5)
+    progress = np.clip((distances - 0.5) / max(width, 1e-6), 0.0, 1.0)
+    fade = fade_start_percent / 100.0
+    if fade >= 1.0:
+        opacity = np.ones_like(progress)
+    else:
+        opacity = np.where(progress <= fade, 1.0, (1.0 - progress) / (1.0 - fade))
+    opacity = np.where(valid, opacity, 0.0)
+
+    overlay_arr = np.zeros((base.height, base.width, 4), dtype=np.uint8)
+    overlay_arr[:, :, :3] = color
+    overlay_arr[:, :, 3] = np.clip(opacity * 255.0, 0, 255).astype(np.uint8)
+    overlay = Image.fromarray(overlay_arr, "RGBA")
+    Image.alpha_composite(base, overlay).save(output_png, format="PNG")
+
+
 def render_avatar_scene(
     blend_path: Path,
     bundle: AvatarBundle,
@@ -684,10 +773,18 @@ def render_avatar_scene(
     res_x: int = 2000,
     res_y: int = 2000,
     _dry_run: bool = False,
+    material_finish: str = "Glossy",
+    background_kind: str = "transparent",
+    background_path: str | None = None,
+    background_value: str = "transparent",
+    outline: dict | None = None,
 ) -> None:
-    """Öffnet WomanRig.blend, texturiert Körperteile, platziert Kopf & Accessoires und rendert mit Cycles."""
+    """Öffnet WomanRig.blend, richtet Avatar/Background ein und rendert mit Cycles."""
     bpy.ops.wm.open_mainfile(filepath=str(blend_path.resolve()))
     scene = bpy.context.scene
+    background_plane = _assign_background_texture(
+        background_kind, background_path, background_value, work_dir
+    )
 
     # 1. Verstecke das Wireframe-Hilfsobjekt 'WomanRig', behalte alle geposten Körperteile
     rig_body_objects: list[bpy.types.Object] = []
@@ -718,6 +815,7 @@ def render_avatar_scene(
                     source,
                     f"AvatarBody_{source.name}",
                     texture_path=bundle.body_texture_path,
+                    finish=material_finish,
                 )
             slot.material = body_materials[source.name]
 
@@ -774,6 +872,7 @@ def render_avatar_scene(
             "AvatarHeadMaterial",
             texture_path=head_tex,
             solid_srgb=skin_srgb,
+            finish=material_finish,
         )
         h_mesh.materials.append(head_mat)
         head_obj = bpy.data.objects.new("AvatarHead", h_mesh)
@@ -808,6 +907,7 @@ def render_avatar_scene(
             tint_srgb=acc.tint_color,
             alpha_blend=acc.alpha_blend,
             transparency=acc.transparency,
+            finish=material_finish,
         )
         acc_mesh.materials.append(acc_mat)
 
@@ -862,3 +962,31 @@ def render_avatar_scene(
 
     if not output_png.is_file() or output_png.stat().st_size == 0:
         raise RuntimeError(f"Blender hat keine Ausgabedatei unter '{output_png}' erzeugt.")
+
+    outline_cfg = outline or {}
+    thickness = float(outline_cfg.get("thickness_percent", 0))
+    if thickness > 0:
+        avatar_png = work_dir / "avatar_outline_source.png"
+        original_filepath = scene.render.filepath
+        original_hidden = background_plane.hide_render if background_plane is not None else None
+        try:
+            if background_plane is not None:
+                background_plane.hide_render = True
+            scene.render.filepath = str(avatar_png.resolve())
+            bpy.ops.render.render(write_still=True)
+        finally:
+            scene.render.filepath = original_filepath
+            if background_plane is not None and original_hidden is not None:
+                background_plane.hide_render = original_hidden
+        if not avatar_png.is_file() or avatar_png.stat().st_size == 0:
+            raise RuntimeError("Isolierter Avatar-Render für die Umrandung wurde nicht erzeugt.")
+        from scripts.render_config import normalize_color
+
+        _apply_avatar_outline(
+            output_png,
+            avatar_png,
+            thickness_percent=thickness,
+            outside=bool(outline_cfg.get("outside", True)),
+            fade_start_percent=float(outline_cfg.get("fade_start_percent", 0)),
+            color=normalize_color(str(outline_cfg.get("color", "white"))),
+        )

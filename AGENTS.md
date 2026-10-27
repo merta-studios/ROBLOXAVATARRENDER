@@ -20,9 +20,9 @@ Diese Regeln gelten für jede KI-Agent-Session in diesem Repository (`merta-stud
   3. Der Workflow `.github/workflows/auto-pr-merge.yml` ("Auto Merge -> main") merged den Branch danach automatisch per `git merge --no-ff` direkt nach `main` und pusht `main`. Du musst dafür nichts weiter tun.
 
 ## 3. GFX-Render-Workflow & Fehlerdiagnose
-- Die Datei `username.txt` im Repository-Root enthält den zu rendernden Roblox-Benutzernamen.
-- Jede Änderung an `username.txt` auf `main` startet `.github/workflows/render-avatar.yml` (kann auch per `gh workflow run render-avatar.yml --ref main` ausgelöst werden).
+- Die Datei `configs.json` im Repository-Root enthält den Roblox-Benutzernamen, Hintergrund, Material und die Umrandungs-Einstellungen.
+- Änderungen an `configs.json`, `backgrounds/` oder `WomanRig.blend` auf `main` starten `.github/workflows/render-avatar.yml` (kann auch per `gh workflow run render-avatar.yml --ref main` ausgelöst werden).
 - In der Workflow-Übersicht (`GITHUB_STEP_SUMMARY`) steht **ausschließlich** entweder:
-  - das fertig gerenderte transparente PNG (gespeichert im Rolling-Tag/Release `latest-render`, ohne die Git-Historie von `main` aufzublähen), **oder**
+  - das fertig gerenderte PNG mit dem in `configs.json` gewählten Hintergrund (gespeichert im Rolling-Tag/Release `latest-render`, ohne die Git-Historie von `main` aufzublähen), **oder**
   - die exakte Fehlermeldung zum direkten Beheben durch dich als Agent.
 - Halte das Repository sauber: keine temporären Artefakte, keine unnötigen Dateien oder Duplikate einchecken. Alte Branches, alte Workflow-Läufe und alte Artefakte räumt `.github/workflows/cleanup.yml` automatisch weg.

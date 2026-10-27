@@ -5,14 +5,16 @@ on:
     branches:
       - main
     paths:
-      - 'username.txt'
+      - 'configs.json'
+      - 'backgrounds/**'
       - 'WomanRig.blend'
       - 'scripts/**'
       - 'tests/**'
+      - 'requirements.txt'
   workflow_dispatch:
     inputs:
       username:
-        description: 'Optionaler Roblox-Benutzername (leer lassen, um username.txt zu nutzen)'
+        description: 'Optionaler Roblox-Benutzername (leer lassen, um configs.json zu nutzen)'
         required: false
         type: string
 
@@ -79,19 +81,12 @@ jobs:
             exit 1
           fi
 
-          # 4. Benutzername-Quelle bestimmen
-          USER_FILE="username.txt"
-          if [ -n "${INPUT_USERNAME:-}" ]; then
-            printf "%s\n" "$INPUT_USERNAME" >/tmp/override_username.txt
-            USER_FILE="/tmp/override_username.txt"
-          fi
-
           mkdir -p /tmp/render_out
 
-          # 5. Roblox R6 Avatar via Open Cloud laden & mit WomanRig.blend in Cycles rendern
+          # 4. Roblox-Avatar und Render-Konfiguration aus configs.json ausführen
           if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX +render -noreset" \
                python scripts/run_render_pipeline.py \
-                 --username-file "$USER_FILE" \
+                 --config-file configs.json \
                  --blend-file WomanRig.blend \
                  --output /tmp/render_out/avatar.png \
                  --status-json /tmp/render_status.json \
@@ -126,7 +121,7 @@ jobs:
           gh release create latest-render /tmp/render_out/avatar.png \
             --target "$COMMIT_SHA" \
             --title "Aktuelles Avatar Render" \
-            --notes "Automatisch gerenderter Roblox R6 Avatar (Blender Cycles, transparenter Hintergrund)." \
+            --notes "Automatisch gerenderter Roblox R6 Avatar (Blender Cycles, Hintergrund gemäß configs.json)." \
             >/dev/null 2>&1 || true
 
           echo "RENDER_IMAGE_URL=https://github.com/${GITHUB_REPOSITORY}/blob/${COMMIT_SHA}/avatar.png?raw=true" >> "$GITHUB_ENV"

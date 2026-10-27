@@ -2,6 +2,7 @@ bpy==5.0.1
 requests>=2.31.0
 Pillow>=10.2.0
 numpy>=1.26.0,<3.0.0
+scipy>=1.11.0,<2.0.0
 DracoPy==2.2.0
 lz4==4.4.5
 zstandard>=0.22.0
