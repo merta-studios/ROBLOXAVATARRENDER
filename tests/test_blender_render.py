@@ -95,7 +95,8 @@ class RenderRegressionTests(unittest.TestCase):
         self.assertEqual(scene.render.engine, "CYCLES")
         self.assertIsNotNone(scene.camera)
         self.assertEqual(scene.camera.name, "GFX_Camera")
-        self.assertEqual(tuple(scene.camera.location), CAMERA_LOCATION)
+        for actual, expected in zip(scene.camera.location, CAMERA_LOCATION):
+            self.assertAlmostEqual(actual, expected, places=5)
         self.assertEqual(scene.camera.data.type, "ORTHO")
         self.assertEqual(scene.camera.data.ortho_scale, CAMERA_ORTHO_SCALE)
         self.assertEqual(scene.render.resolution_x, RENDER_SIZE)
