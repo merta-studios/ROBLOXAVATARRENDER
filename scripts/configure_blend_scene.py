@@ -57,6 +57,8 @@ def configure_scene() -> None:
     scene.render.pixel_aspect_x = 1.0
     scene.render.pixel_aspect_y = 1.0
     scene.render.use_border = False
+    if hasattr(scene.render.image_settings, "media_type"):
+        scene.render.image_settings.media_type = "IMAGE"
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.image_settings.color_depth = "8"
