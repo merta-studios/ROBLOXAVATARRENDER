@@ -1,0 +1,36 @@
+Blender-Regressionstests fehlgeschlagen:
+test_blend_scene_preset_uses_fixed_cycles_camera (test_blender_render.RenderRegressionTests.test_blend_scene_preset_uses_fixed_cycles_camera) ... /home/runner/work/ROBLOXAVATARRENDER/ROBLOXAVATARRENDER/scripts/blender_render.py:528: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  world.use_nodes = True
+00:00.385  cycles           | WARNING CUEW initialization failed: Error opening the library
+FAIL
+test_fully_dark_face_asset_falls_back_to_skin (test_blender_render.RenderRegressionTests.test_fully_dark_face_asset_falls_back_to_skin) ... ok
+test_loaded_head_and_accessories_share_a_tiny_downward_offset (test_blender_render.RenderRegressionTests.test_loaded_head_and_accessories_share_a_tiny_downward_offset) ... ok
+test_opaque_face_background_keeps_head_skin_colored (test_blender_render.RenderRegressionTests.test_opaque_face_background_keeps_head_skin_colored)
+Deckender (schwarzer) Decal-Hintergrund darf die Kopfhaut nicht übermalen. ... ok
+test_texture_material_is_glossy_and_ignores_rig_shader (test_blender_render.RenderRegressionTests.test_texture_material_is_glossy_and_ignores_rig_shader)
+Rig-Shader (glossy/zero-Roughness, UV-/Attribut-Links) darf nicht durchschlagen. ... /home/runner/work/ROBLOXAVATARRENDER/ROBLOXAVATARRENDER/tests/test_blender_render.py:35: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  source.use_nodes = True
+/home/runner/work/ROBLOXAVATARRENDER/ROBLOXAVATARRENDER/scripts/blender_render.py:153: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  mat.use_nodes = True
+ok
+test_transparent_face_decal_is_composited_over_skin (test_blender_render.RenderRegressionTests.test_transparent_face_decal_is_composited_over_skin) ... ok
+
+======================================================================
+FAIL: test_blend_scene_preset_uses_fixed_cycles_camera (test_blender_render.RenderRegressionTests.test_blend_scene_preset_uses_fixed_cycles_camera)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/ROBLOXAVATARRENDER/ROBLOXAVATARRENDER/tests/test_blender_render.py", line 98, in test_blend_scene_preset_uses_fixed_cycles_camera
+    self.assertEqual(tuple(scene.camera.location), CAMERA_LOCATION)
+AssertionError: Tuples differ: (0.0, -20.0, 3.799999952316284) != (0.0, -20.0, 3.8)
+
+First differing element 2:
+3.799999952316284
+3.8
+
+- (0.0, -20.0, 3.799999952316284)
++ (0.0, -20.0, 3.8)
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.444s
+
+FAILED (failures=1)
