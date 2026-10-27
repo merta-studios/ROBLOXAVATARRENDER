@@ -317,26 +317,8 @@ class RobloxOpenCloudClient:
 
     def fetch_avatar_metadata_v4(self, user_id: int) -> dict[str, Any]:
         """Lädt die R15-Avatar-Definition (Farben, Skalierung, getragene Assets)
-        eines Nutzers ueber die Open Cloud v4 Avatar API (benutzt x-api-key).
-        Fällt auf die v1/v2 Avatar-Endpunkte zurück, wenn v4 den Nutzer nicht
-        liefert (z. B. HTTP 404)."""
-        resp = self._request(
-            "GET",
-            f"https://apis.roblox.com/cloud/v4/avatar/users/{user_id}",
-            use_api_key=True,
-        )
-        if resp.status_code == 200:
-            return resp.json()
-        detail = _sanitize_secret(resp.text[:300], self.api_key)
-        if resp.status_code in (401, 403):
-            raise PipelineError(
-                f"Der ROBLOX_API_KEY darf die Open Cloud v4 Avatar-API nicht nutzen "
-                f"(HTTP {resp.status_code}). Detail: {detail}"
-            )
-        print(
-            f"[avatar] Open Cloud v4 lieferte HTTP {resp.status_code} für User {user_id} - "
-            "Fallback auf v1/v2 Avatar-Endpunkte."
-        )
+        eines Nutzers. Das ist der funktionierende Endpunkt fuer ClassicType
+        (v2 Avatar API, funktioniert ohne Cookie fuer oeffentliche Nutzerdaten)."""
         return self.fetch_avatar_metadata(user_id)
 
     def fetch_equipped_emote(self, user_id: int) -> dict[str, Any] | None:
