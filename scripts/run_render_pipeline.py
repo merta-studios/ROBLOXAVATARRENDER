@@ -51,7 +51,7 @@ def verify_rendered_png(png_path: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Rendert einen Roblox R6 Avatar mit WomanRig.blend in Blender EEVEE.")
+    parser = argparse.ArgumentParser(description="Rendert einen Roblox R6 Avatar mit WomanRig.blend in Blender Cycles.")
     parser.add_argument("--username-file", default="username.txt", help="Pfad zur Textdatei mit dem Roblox-Benutzernamen.")
     parser.add_argument("--blend-file", default="WomanRig.blend", help="Pfad zur WomanRig.blend Datei.")
     parser.add_argument("--output", default="render/latest.png", help="Zielpfad für das gerenderte transparente PNG.")

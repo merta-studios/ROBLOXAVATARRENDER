@@ -1,4 +1,4 @@
-"""Blender 5.x EEVEE Szene-Builder & Renderer für WomanRig.blend."""
+"""Blender 5.x Cycles Szene-Builder & Renderer für WomanRig.blend."""
 
 from __future__ import annotations
 
@@ -692,7 +692,7 @@ def render_avatar_scene(
     res_y: int = 2000,
     _dry_run: bool = False,
 ) -> None:
-    """Öffnet WomanRig.blend, texturiert Körperteile, platziert Kopf & Accessoires und rendert mit EEVEE."""
+    """Öffnet WomanRig.blend, texturiert Körperteile, platziert Kopf & Accessoires und rendert mit Cycles."""
     bpy.ops.wm.open_mainfile(filepath=str(blend_path.resolve()))
     scene = bpy.context.scene
 
@@ -839,12 +839,17 @@ def render_avatar_scene(
         acc_obj.matrix_world = Matrix(c_handle_bl.tolist())
         render_objects.append(acc_obj)
 
-    # 5. Studio-Beleuchtung, Kamera & Blender EEVEE Render-Konfiguration (transparenter Hintergrund)
+    # 5. Studio-Beleuchtung, Kamera & Blender Cycles Render-Konfiguration (transparenter Hintergrund)
     _log_scene_diagnostics(scene, render_objects)
     _setup_studio_lighting_and_world(scene)
     _setup_auto_framed_camera(scene, render_objects, res_x, res_y)
 
-    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.engine = "CYCLES"
+    if not hasattr(scene, "cycles"):
+        try:
+            bpy.ops.preferences.addon_enable(module="cycles")
+        except Exception:
+            pass
     scene.render.film_transparent = True
     scene.render.resolution_x = res_x
     scene.render.resolution_y = res_y
@@ -860,26 +865,18 @@ def render_avatar_scene(
     scene.view_settings.view_transform = "Standard"
     scene.view_settings.look = "None"
 
-    if hasattr(scene, "eevee"):
-        if hasattr(scene.eevee, "taa_render_samples"):
-            scene.eevee.taa_render_samples = 128
-        if hasattr(scene.eevee, "use_shadows"):
-            scene.eevee.use_shadows = True
-        if hasattr(scene.eevee, "use_raytracing"):
-            scene.eevee.use_raytracing = True
-        # Klare Spiegelungen statt weichgezeichneter "matter" Reflexe.
-        rt_opts = getattr(scene.eevee, "ray_tracing_options", None)
-        if rt_opts is not None:
-            for attr, value in (
-                ("trace_max_roughness", 0.6),
-                ("use_denoise", True),
-                ("resolution_scale", "1"),
-            ):
-                if hasattr(rt_opts, attr):
-                    try:
-                        setattr(rt_opts, attr, value)
-                    except Exception:
-                        pass
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 64
+    scene.cycles.use_denoising = True
+    if hasattr(scene.cycles, "denoiser"):
+        scene.cycles.denoiser = "OPENIMAGEDENOISE"
+    
+    scene.cycles.max_bounces = 4
+    scene.cycles.diffuse_bounces = 1
+    scene.cycles.glossy_bounces = 2
+    scene.cycles.transmission_bounces = 2
+    scene.cycles.volume_bounces = 0
+    scene.cycles.transparent_max_bounces = 4
 
     output_png.parent.mkdir(parents=True, exist_ok=True)
     scene.render.filepath = str(output_png.resolve())
@@ -888,4 +885,4 @@ def render_avatar_scene(
     bpy.ops.render.render(write_still=True)
 
     if not output_png.is_file() or output_png.stat().st_size == 0:
-        raise RuntimeError(f"Blender EEVEE hat keine Ausgabedatei unter '{output_png}' erzeugt.")
+        raise RuntimeError(f"Blender hat keine Ausgabedatei unter '{output_png}' erzeugt.")
