@@ -225,7 +225,7 @@ class RobloxOpenCloudClient:
         clean = username.strip().lstrip("@").strip()
         if not clean:
             raise PipelineError(
-                "Die Datei 'username.txt' enthält keinen Roblox-Benutzernamen. "
+                "Die Konfiguration enthält keinen Roblox-Benutzernamen. "
                 "Bitte trage dort einen gültigen Benutzernamen ein."
             )
 
@@ -241,7 +241,7 @@ class RobloxOpenCloudClient:
         items = resp.json().get("data") or []
         if not items:
             raise PipelineError(
-                f"Der Roblox-Benutzer '{clean}' existiert nicht. Bitte prüfe den Namen in 'username.txt'."
+                f"Der Roblox-Benutzer '{clean}' existiert nicht. Bitte prüfe den Namen in 'configs.json'."
             )
 
         user_id = int(items[0]["id"])

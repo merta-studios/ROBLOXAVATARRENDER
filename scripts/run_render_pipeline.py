@@ -18,21 +18,10 @@ if str(REPO_ROOT) not in sys.path:
 from PIL import Image
 
 from scripts.roblox_opencloud import PipelineError, _sanitize_secret, load_avatar_bundle
+from scripts.render_config import read_config, resolve_background
 
 
-def read_username_file(path: Path) -> str:
-    if not path.is_file():
-        raise PipelineError(f"Die Trigger-Datei '{path.name}' wurde im Repository nicht gefunden.")
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if line and not line.startswith("#"):
-            return line
-    raise PipelineError(
-        f"Die Datei '{path.name}' ist leer. Bitte trage dort einen gültigen Roblox-Benutzernamen ein."
-    )
-
-
-def verify_rendered_png(png_path: Path) -> None:
+def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> None:
     if not png_path.is_file() or png_path.stat().st_size == 0:
         raise PipelineError("Das gerenderte PNG fehlt oder ist 0 Bytes groß.")
     img = Image.open(png_path)
@@ -44,15 +33,15 @@ def verify_rendered_png(png_path: Path) -> None:
         raise PipelineError(
             "Das gerenderte Bild ist vollständig transparent (leer). Prüfe Kamera/OpenGL-Kontext."
         )
-    if alpha_min == 255:
+    if expect_transparency and alpha_min == 255:
         raise PipelineError(
-            "Der Hintergrund des gerenderten Bildes ist nicht transparent (Alpha durchgehend 255)."
+            "Der Hintergrund sollte transparent sein, der Alpha-Kanal ist jedoch durchgehend deckend."
         )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rendert einen Roblox R6 Avatar mit WomanRig.blend in Blender Cycles.")
-    parser.add_argument("--username-file", default="username.txt", help="Pfad zur Textdatei mit dem Roblox-Benutzernamen.")
+    parser.add_argument("--config-file", default="configs.json", help="Pfad zur JSON-Konfiguration für Avatar und Render.")
     parser.add_argument("--blend-file", default="WomanRig.blend", help="Pfad zur WomanRig.blend Datei.")
     parser.add_argument("--output", default="render/latest.png", help="Zielpfad für das gerenderte transparente PNG.")
     parser.add_argument("--status-json", default="/tmp/render_status.json", help="Pfad für den strukturierten Ergebnis-Report.")
@@ -62,16 +51,25 @@ def main() -> int:
     status_path = Path(args.status_json)
     output_path = (REPO_ROOT / args.output).resolve() if not Path(args.output).is_absolute() else Path(args.output)
     blend_path = (REPO_ROOT / args.blend_file).resolve() if not Path(args.blend_file).is_absolute() else Path(args.blend_file)
-    user_file = (REPO_ROOT / args.username_file).resolve() if not Path(args.username_file).is_absolute() else Path(args.username_file)
+    config_file = (REPO_ROOT / args.config_file).resolve() if not Path(args.config_file).is_absolute() else Path(args.config_file)
 
     try:
         if not blend_path.is_file():
             raise PipelineError(f"Die Blender-Datei '{blend_path.name}' wurde im Repository nicht gefunden.")
 
-        username = read_username_file(user_file)
+        try:
+            config = read_config(config_file)
+        except ValueError as exc:
+            raise PipelineError(str(exc)) from exc
+
+        username = os.environ.get("INPUT_USERNAME", "").strip() or config["username"]
 
         with tempfile.TemporaryDirectory(prefix="rbx_gfx_") as tmp:
             work_dir = Path(tmp)
+            try:
+                background_kind, background_path = resolve_background(config["background"], work_dir)
+            except ValueError as exc:
+                raise PipelineError(str(exc)) from exc
             bundle = load_avatar_bundle(username=username, api_key=api_key, work_dir=work_dir)
 
             # Importiere bpy erst nach erfolgreicher API-Abfrage für schnelle Fehlerdiagnose
@@ -82,9 +80,14 @@ def main() -> int:
                 bundle=bundle,
                 output_png=output_path,
                 work_dir=work_dir,
+                material_finish=config["material"],
+                background_kind=background_kind,
+                background_path=background_path,
+                background_value=config["background"],
+                outline=config["outline"],
             )
 
-        verify_rendered_png(output_path)
+        verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
 
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(

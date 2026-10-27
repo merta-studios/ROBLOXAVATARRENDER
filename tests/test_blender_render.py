@@ -16,6 +16,8 @@ from scripts.blender_render import (
     _clone_rig_material,
     _prepare_custom_head_texture,
     _build_blender_mesh_from_rbx,
+    _setup_studio_lighting_and_world,
+    _apply_avatar_outline,
 )
 from scripts.rbx_formats import MeshData
 from scripts.configure_blend_scene import (
@@ -55,6 +57,48 @@ class RenderRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(shader.inputs['Specular IOR Level'].default_value, 0.5)
         self.assertEqual(shader.inputs['Base Color'].links[0].from_node.type, 'TEX_IMAGE')
         self.assertFalse(shader.inputs['Alpha'].is_linked)
+
+    def test_matt_material_has_no_clearcoat_and_high_roughness(self):
+        mat = _clone_rig_material(None, "Matt", finish="Matt")
+        shader = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+        self.assertAlmostEqual(shader.inputs["Roughness"].default_value, 0.82)
+        self.assertEqual(shader.inputs["Coat Weight"].default_value, 0.0)
+
+    def test_configure_keeps_an_existing_environment_texture(self):
+        world = bpy.data.worlds.new("HDRIWorld")
+        world.use_nodes = True
+        tree = world.node_tree
+        tree.nodes.clear()
+        env = tree.nodes.new("ShaderNodeTexEnvironment")
+        env.image = bpy.data.images.new("TestHDRI", width=4, height=2)
+        background = tree.nodes.new("ShaderNodeBackground")
+        output = tree.nodes.new("ShaderNodeOutputWorld")
+        tree.links.new(env.outputs["Color"], background.inputs["Color"])
+        tree.links.new(background.outputs["Background"], output.inputs["Surface"])
+        bpy.context.scene.world = world
+
+        _setup_studio_lighting_and_world(bpy.context.scene)
+
+        self.assertIsNotNone(tree.nodes.get(env.name))
+        self.assertTrue(any(link.from_node == env for link in tree.links))
+        self.assertTrue(any(link.to_node == output for link in tree.links))
+
+    def test_outline_uses_image_width_and_stays_outside_avatar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base_path = Path(tmp) / "base.png"
+            avatar_path = Path(tmp) / "avatar.png"
+            Image.new("RGBA", (20, 20), (0, 0, 0, 0)).save(base_path)
+            avatar = Image.new("RGBA", (20, 20), (0, 0, 0, 0))
+            ImageDraw.Draw(avatar).rectangle((7, 7, 12, 12), fill=(255, 0, 0, 255))
+            avatar.save(avatar_path)
+            _apply_avatar_outline(
+                base_path, avatar_path, thickness_percent=10, outside=True,
+                fade_start_percent=100, color=(255, 255, 255),
+            )
+            result = Image.open(base_path).convert("RGBA")
+        self.assertGreater(result.getpixel((6, 9))[3], 0)
+        self.assertEqual(result.getpixel((9, 9))[3], 0)
+        self.assertEqual(result.getpixel((4, 9))[3], 0)
 
     def test_opaque_face_background_keeps_head_skin_colored(self):
         """Deckender (schwarzer) Decal-Hintergrund darf die Kopfhaut nicht übermalen."""

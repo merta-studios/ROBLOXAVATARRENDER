@@ -1,0 +1,11 @@
+{
+  "username": "DevCrypticV",
+  "background": "transparent",
+  "material": "Glossy",
+  "outline": {
+    "thickness_percent": 0,
+    "outside": true,
+    "fade_start_percent": 0,
+    "color": "white"
+  }
+}

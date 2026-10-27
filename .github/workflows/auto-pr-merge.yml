@@ -49,11 +49,9 @@ jobs:
               exit 0
             fi
 
-            USERNAME_CHANGED="false"
-            if ! git diff --quiet "origin/main...origin/$BRANCH" -- username.txt; then
-              if grep -qvE '^\s*(#|$)' <(git show "origin/$BRANCH:username.txt" 2>/dev/null || true); then
-                USERNAME_CHANGED="true"
-              fi
+            RENDER_INPUTS_CHANGED="false"
+            if ! git diff --quiet "origin/main...origin/$BRANCH" -- configs.json backgrounds/ WomanRig.blend; then
+              RENDER_INPUTS_CHANGED="true"
             fi
 
             git checkout -B main origin/main
@@ -72,7 +70,7 @@ jobs:
             sleep 5
           done
 
-          # Falls username.txt geändert wurde, starte Render-Workflow (GITHUB_TOKEN-Pushes lösen kein push-Event aus)
-          if [ "$USERNAME_CHANGED" = "true" ]; then
+          # Render-Eingabenänderungen manuell auslösen (GITHUB_TOKEN-Pushes starten kein push-Event)
+          if [ "$RENDER_INPUTS_CHANGED" = "true" ]; then
             gh workflow run render-avatar.yml --ref main || true
           fi

@@ -4,14 +4,16 @@ Vollautomatischer GitHub-Actions-Renderer für Roblox **R6-Avatare** auf Basis v
 
 ## Funktionsweise
 
-1. **`username.txt` bearbeiten**: Trage einen beliebigen Roblox-Benutzernamen in [`username.txt`](./username.txt) ein und speichere/committe die Änderung.
+1. **`configs.json` bearbeiten**: Benutzername, Hintergrund, Material und Avatar-Umrandung werden zentral in [`configs.json`](./configs.json) eingestellt.
+   - **Hintergrund**: `transparent`, ein Hex-Farbwert (z. B. `#2a5bff`), eine direkte Bild-URL oder der Name einer Bilddatei in [`backgrounds/`](./backgrounds/). Das Bild wird als Image Texture auf das Mesh-Plane `Background` gelegt.
+   - **Material**: Nur `Glossy` (bisheriger Glanz) und `Matt` (hohe Roughness, kein Klarlack).
+   - **Umrandung**: Dicke in Prozent der Bildbreite, Position innen/außen, Transparenz-Fade ab einem prozentualen Dickenanteil und Farbe als Hex, `white` oder `black`. Bei 2000 px Bildbreite entspricht 1 % genau 20 px; `0` deaktiviert sie.
    - **Kopf & Gesicht**: Dynamic-/Custom-Heads behalten ihre eigene Mesh-UV-Map und Kopftextur; bei transparenten Texturbereichen wird die Head-BodyColor ergänzt. Nur der klassische R6-Kopf erhält das klassische Face-Decal. Brillen und andere Face-Accessoires bleiben echte Meshes und ersetzen niemals das Gesicht. Dynamische Gesichtsausdrücke werden im statischen Render nicht animiert.
-   - **Materialien**: Körper, Kopf und Accessoires nutzen einen frisch aufgebauten, glänzenden Roblox-Kunststoff-Shader (Roughness ~0,13, Coat 0,32) mit Studio-Softboxen – unabhängig vom Shader-Baum aus `WomanRig.blend`.
 2. **Automatischer R6-Render (`.github/workflows/render-avatar.yml`)**:
    - Lädt über die **Roblox Open Cloud API** (`ROBLOX_API_KEY`) die Körperfarben, klassische Kleidung (`Shirt`, `Pants`, `T-Shirt`), das Gesicht (`Face`), den Kopf (`Head`) und alle starren R6-Accessoires (`Hat`, `Hair`, `Face`, `Neck`, `Shoulder`, `Front`, `Back`, `Waist`).
    - Öffnet [`WomanRig.blend`](./WomanRig.blend) in **Blender 5.0 (`bpy`)**, wendet den hochauflösenden R6-Texturatlas auf alle fertig geposten Körperteile an und platziert Kopf sowie Accessoires mit exakt denselben Principled-BSDF-Materialeinstellungen auf dem Rig.
-   - Engine, feste orthografische Kamera, Studio-Licht, Auflösung und Transparenz sind direkt in `WomanRig.blend` gespeichert. Die Pipeline überschreibt diese konstanten Szenenwerte nicht; sie setzt zur Laufzeit nur noch den Ausgabepfad.
-   - Rendert mit **Blender Cycles** bei **transparentem Hintergrund (`RGBA`)**.
+   - Engine, feste orthografische Kamera, Studio-Licht und Auflösung sind in `WomanRig.blend` gespeichert. Die wiederhergestellte Environment Texture/HDRI wird weiter als Render-Umgebung verwendet und von der Pipeline nicht überschrieben. Die Bild-Plane `Background` wird nur für den gewählten Hintergrund texturiert.
+   - Rendert mit **Blender Cycles** als **RGBA**. Bei `background: "transparent"` bleibt der Bildhintergrund transparent.
    - Zeigt in der **Workflow-Übersicht (`Summary`) ausschließlich eine Sache**: entweder das fertig gerenderte Bild oder eine präzise Fehlermeldung.
 3. **Auto Merge -> main (`.github/workflows/auto-pr-merge.yml`)**:
    - Jeder Push auf einen Arbeitsbranch wird automatisch direkt per `git merge --no-ff` nach `main` gemerged und gepusht. Es werden **keine Pull Requests** erstellt (siehe [`AGENTS.md`](./AGENTS.md)).
