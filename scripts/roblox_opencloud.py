@@ -353,6 +353,11 @@ class RobloxOpenCloudClient:
         try:
             img = Image.open(io.BytesIO(raw))
             img.load()
+            print(
+                f"[image] {asset_id}: {img.mode} {img.size} "
+                f"transparency={img.info.get('transparency')} "
+                f"raw_format={raw[:8]!r}"
+            )
             return img.convert("RGBA")
         except Exception:
             pass
