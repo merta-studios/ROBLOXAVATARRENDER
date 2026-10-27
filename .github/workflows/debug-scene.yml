@@ -36,17 +36,16 @@ jobs:
           tail -n 200 /tmp/debug_stdout.log
           ls -la /tmp/debug_out || true
 
-      - name: Publish dump as tag
+      - name: Publish dump as branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
+          cp /tmp/debug_stdout.log /tmp/debug_out/stdout.log
+          cd /tmp/debug_out
+          git init -q .
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cd /tmp/debug_out || exit 1
-          : > /tmp/debug_stdout.log.tail
-          cp /tmp/debug_stdout.log /tmp/debug_out/stdout.log
-          git init -q /tmp/dbg_repo
-          cp -r /tmp/debug_out/. /tmp/dbg_repo/
-          cd /tmp/dbg_repo
           git add -A
           git commit -qm "debug dump"
-          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/tags/debug-dump
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/debug-dump
