@@ -4,14 +4,16 @@ WICHTIG: Hier wird KEINE Blend-Datei geoeffnet. Die R6-Blend-Datei gehoert
 ausschliesslich zum R6-Pfad HearthandsType. ClassicType baut eine komplett
 leere Blender-Szene mit eigener Kamera, eigenem Licht und Ortho-Projektion.
 
-Platzhalter: Es existiert noch kein R15-Rig-Blend. Deshalb werden die sechs
-BodyColors des Avatars als farbige Bloecke dargestellt. Geladene Accessoires
-sind dagegen echte Meshes mit UVs/Texturen und werden an ihren Attachments
-platziert. Sobald ein R15-Rig vorhanden ist, koennen die Bloecke durch die
-Armatur ersetzt werden; die Schnittstelle ``render_classic_scene`` bleibt dann
-unveraendert. Emote-Keyframes werden ohne Armatur nur naeherungsweise auf die
-Bloecke uebertragen -- insbesondere wird bei ``pose = "None"`` weder ein Emote
-geladen noch irgendeine Herz-Pose angewendet.
+Als Koerper wird der offizielle Standard-R15-Blocky-Rig von Roblox verwendet
+(``Roblox/avatar`` -> ``Legacy/rigs/R15_Block.fbx``). Die 15 Meshes, ihre UVs
+und die originalen Attachment-Positionen liegen einmalig aufbereitet in
+``ClassicType/assets/r15_blocky.json.gz``. Es wird also weiterhin KEINE
+Blend-Datei benoetigt: Die Szene entsteht komplett aus diesen Daten. Fehlende
+Koerperteil-Assets im Inventar werden damit nicht mehr durch einfache Quader,
+sondern exakt durch die Standard-R15-Teile ersetzt. Geladene Accessoires sind
+ebenfalls echte Meshes mit UVs/Texturen. Emote-Keyframes werden mangels
+Armatur ueber Gruppen-Empties naeherungsweise auf die R15-Teile uebertragen --
+bei ``pose = "None"`` wird weder ein Emote geladen noch eine Pose angewendet.
 
 Ausgewertet werden hier: ``classic_pose``, ``classic_emote``,
 ``classic_rotation_deg``, ``classic_abstand_oben``, ``classic_abstand_unten``,
@@ -20,6 +22,7 @@ Ausgewertet werden hier: ``classic_pose``, ``classic_emote``,
 
 from __future__ import annotations
 
+import functools
 import math
 from pathlib import Path
 from typing import Any
@@ -35,6 +38,7 @@ except ImportError:  # pragma: no cover - lokal ohne Blender-Systembibliotheken
 
 from scripts.gfx_layout import compute_spacing_transform
 from scripts.image_compositing import apply_avatar_outline, compose_background
+from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
 from scripts.roblox_opencloud import AvatarBundle
@@ -56,28 +60,21 @@ T_RBX_TO_BL = np.array(
 )
 T3_RBX_TO_BL = T_RBX_TO_BL[:3, :3]
 
-# Ungefaehre Attachment-Positionen in Roblox-Koordinaten. Da die Koerperbloecke
-# ein Platzhalter sind, genuegt eine R15-naehere Positionierung an Kopf, Torso,
-# Schultern, Huefte und Fuessen.
-R15_ATTACHMENTS_RBX: dict[str, tuple[float, float, float]] = {
-    "HatAttachment": (0.0, 5.05, 0.0),
-    "HairAttachment": (0.0, 5.05, 0.0),
-    "FaceFrontAttachment": (0.0, 4.5, -0.42),
-    "FaceCenterAttachment": (0.0, 4.5, 0.0),
-    "NeckAttachment": (0.0, 3.95, 0.0),
-    "BodyFrontAttachment": (0.0, 3.0, -0.38),
-    "BodyBackAttachment": (0.0, 3.0, 0.34),
-    "LeftCollarAttachment": (-0.55, 3.82, 0.0),
-    "RightCollarAttachment": (0.55, 3.82, 0.0),
-    "LeftShoulderAttachment": (-0.82, 3.78, -0.03),
-    "RightShoulderAttachment": (0.82, 3.78, -0.03),
-    "WaistCenterAttachment": (0.0, 2.33, 0.0),
-    "WaistFrontAttachment": (0.0, 2.33, -0.35),
-    "WaistBackAttachment": (0.0, 2.33, 0.3),
-    "LeftFootAttachment": (-0.25, 0.62, 0.0),
-    "RightFootAttachment": (0.25, 0.62, 0.0),
-    "__LEGACY_HAT__": (0.0, 4.95, 0.0),
-}
+@functools.lru_cache(maxsize=1)
+def _r15_attachments_rbx() -> dict[str, tuple[float, float, float]]:
+    """Original-Attachments des offiziellen Rigs zurueck nach Roblox-Koordinaten.
+
+    ``load_r15_attachments()`` liefert Blender-Koordinaten (Z oben, -Y vorne).
+    Die bestehende Accessoire-Matrix rechnet in Roblox-Koordinaten, daher wird
+    hier mit ``T3_RBX_TO_BL`` zuruecktransformiert. T3 ist involutorisch.
+    """
+    out: dict[str, tuple[float, float, float]] = {}
+    for name, bl_pos in load_r15_attachments().items():
+        rbx = T3_RBX_TO_BL @ np.asarray(bl_pos, dtype=np.float64)
+        out[name] = (float(rbx[0]), float(rbx[1]), float(rbx[2]))
+    out["__LEGACY_HAT__"] = out["HatAttachment"]
+    return out
+
 
 FALLBACK_ATTACHMENT_BY_TYPE: dict[int, str] = {
     8: "HatAttachment",
@@ -90,15 +87,37 @@ FALLBACK_ATTACHMENT_BY_TYPE: dict[int, str] = {
     47: "WaistBackAttachment",
 }
 
-# (Name, Groesse (x,y,z), Mittelpunkt (x,y,z), BodyColors-Key) in Blender-Koordinaten.
-BODY_BLOCKS: tuple[tuple[str, tuple[float, float, float], tuple[float, float, float], str], ...] = (
-    ("Head", (0.66, 0.66, 0.66), (0.0, 0.0, 4.5), "head"),
-    ("Torso", (0.92, 0.56, 1.2), (0.0, 0.0, 3.0), "torso"),
-    ("RightArm", (0.34, 0.34, 1.18), (-0.64, 0.0, 3.0), "rightArm"),
-    ("LeftArm", (0.34, 0.34, 1.18), (0.64, 0.0, 3.0), "leftArm"),
-    ("RightLeg", (0.36, 0.36, 1.18), (-0.25, 0.0, 1.22), "rightLeg"),
-    ("LeftLeg", (0.36, 0.36, 1.18), (0.25, 0.0, 1.22), "leftLeg"),
-)
+# Emote-Keyframes nutzen R6-Begriffe. Jeder Begriff fasst die drei (Torso: zwei)
+# zusammengehoerigen R15-Teile zu einer beweglichen Gruppe zusammen.
+R15_EMOTE_GROUPS: dict[str, tuple[str, ...]] = {
+    "Head": ("Head",),
+    "Torso": ("UpperTorso", "LowerTorso"),
+    "LeftArm": ("LeftUpperArm", "LeftLowerArm", "LeftHand"),
+    "RightArm": ("RightUpperArm", "RightLowerArm", "RightHand"),
+    "LeftLeg": ("LeftUpperLeg", "LeftLowerLeg", "LeftFoot"),
+    "RightLeg": ("RightUpperLeg", "RightLowerLeg", "RightFoot"),
+}
+
+# Welches Attachment bewegt sich mit welcher Koerpergruppe? Nur relevant,
+# wenn tatsaechlich ein Emote angewendet wird.
+ATTACHMENT_GROUP: dict[str, str] = {
+    "HatAttachment": "Head",
+    "HairAttachment": "Head",
+    "FaceFrontAttachment": "Head",
+    "FaceCenterAttachment": "Head",
+    "NeckAttachment": "Torso",
+    "BodyFrontAttachment": "Torso",
+    "BodyBackAttachment": "Torso",
+    "LeftCollarAttachment": "LeftArm",
+    "RightCollarAttachment": "RightArm",
+    "LeftShoulderAttachment": "LeftArm",
+    "RightShoulderAttachment": "RightArm",
+    "LeftGripAttachment": "LeftArm",
+    "RightGripAttachment": "RightArm",
+    "WaistFrontAttachment": "Torso",
+    "WaistCenterAttachment": "Torso",
+    "WaistBackAttachment": "Torso",
+}
 
 DEFAULT_BODY_RGB: dict[str, tuple[int, int, int]] = {
     "head": (245, 205, 48),
@@ -294,30 +313,26 @@ def _solid_material(
     return mat
 
 
-def _create_body_block(
-    name: str,
-    size: tuple[float, float, float],
-    pos: tuple[float, float, float],
+def _create_r15_part(
+    part: R15Part,
     material: Any,
     scene: Any,
     render_objects: list[Any],
 ) -> Any:
-    sx, sy, sz = (v / 2.0 for v in size)
-    verts = [
-        (-sx, -sy, -sz), (sx, -sy, -sz), (sx, sy, -sz), (-sx, sy, -sz),
-        (-sx, -sy, sz), (sx, -sy, sz), (sx, sy, sz), (-sx, sy, sz),
-    ]
-    faces = [
-        (0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
-        (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7),
-    ]
-    mesh = bpy.data.meshes.new(f"{name}Mesh")
-    mesh.from_pydata(verts, [], faces)
+    """Erzeugt ein Mesh aus den offiziellen R15-Blocky-Rig-Daten."""
+    mesh = bpy.data.meshes.new(f"{part.name}Mesh")
+    mesh.from_pydata(part.vertices, [], part.faces)
     mesh.update()
+    uv_layer = mesh.uv_layers.new(name="UVMap")
+    for loop in mesh.loops:
+        if loop.index < len(part.uvs):
+            uv_layer.data[loop.index].uv = part.uvs[loop.index]
+    if part.name == "Head":
+        for poly in mesh.polygons:
+            poly.use_smooth = True
     mesh.materials.append(material)
-    obj = bpy.data.objects.new(name, mesh)
+    obj = bpy.data.objects.new(part.name, mesh)
     scene.collection.objects.link(obj)
-    obj.location = Vector(pos)
     render_objects.append(obj)
     return obj
 
@@ -360,18 +375,34 @@ def _build_accessory_mesh(
     return mesh
 
 
+def _effective_attachment_name(acc: Any) -> str:
+    """Bestimmt das tatsaechlich verwendete Attachment (inkl. Legacy-Hut)."""
+    attachments = _r15_attachments_rbx()
+    if acc.attachment_name and acc.attachment_name in attachments:
+        return str(acc.attachment_name)
+    if acc.attachment_name is None and acc.legacy_attachment_point != IDENTITY_CFRAME:
+        return "__LEGACY_HAT__"
+    return FALLBACK_ATTACHMENT_BY_TYPE.get(int(acc.asset_type_id), "HatAttachment")
+
+
+def _accessory_group(acc: Any) -> str:
+    """Koerpergruppe, mit der ein Accessoire bei Emotes mitbewegt wird."""
+    name = _effective_attachment_name(acc)
+    if name == "__LEGACY_HAT__":
+        name = "HatAttachment"
+    return ATTACHMENT_GROUP.get(name, "Torso")
+
+
 def _accessory_matrix_bl(acc: Any) -> Any:
     """Berechnet C_rig @ C_adj @ inv(C_acc) und wechselt in Blender-Koordinaten."""
-    if acc.attachment_name in R15_ATTACHMENTS_RBX:
-        rig_pos = R15_ATTACHMENTS_RBX[acc.attachment_name]
-        acc_cf = acc.attachment_cframe
-    elif acc.attachment_name is None and acc.legacy_attachment_point != IDENTITY_CFRAME:
-        rig_pos = R15_ATTACHMENTS_RBX["__LEGACY_HAT__"]
+    attachment_name = _effective_attachment_name(acc)
+    rig_pos = _r15_attachments_rbx()[attachment_name]
+    if attachment_name == "__LEGACY_HAT__":
         acc_cf = acc.legacy_attachment_point
+    elif acc.attachment_name:
+        acc_cf = acc.attachment_cframe
     else:
-        fallback = FALLBACK_ATTACHMENT_BY_TYPE.get(acc.asset_type_id, "HatAttachment")
-        rig_pos = R15_ATTACHMENTS_RBX[fallback]
-        acc_cf = acc.attachment_cframe if acc.attachment_name else acc.legacy_attachment_point
+        acc_cf = acc.legacy_attachment_point
 
     c_rig = _translation_mat4(*rig_pos)
     c_acc = _cframe_to_mat4(acc_cf)
@@ -422,33 +453,68 @@ def _pose_part_name(pose_name: str) -> str | None:
     return None
 
 
-def _apply_emote_to_blocks(classic_emote: Any, body_objects: dict[str, Any]) -> None:
-    """Uebertraegt Keyframe-Rotationen naeherungsweise auf die Platzhalter-Bloecke.
+def _apply_emote_to_r15(
+    classic_emote: Any,
+    body_objects: dict[str, Any],
+    scene: Any,
+) -> dict[str, Any]:
+    """Uebertraegt Keyframe-Rotationen auf Gruppen-Empties des R15-Rigs.
 
-    Ohne R15-Armature gibt es keine Knochen-Hierarchie. Die Rotationen werden
-    deshalb einzeln um den Mittelpunkt des jeweiligen Blocks angewendet. Bei
-    ``pose = "None"`` wird diese Funktion gar nicht erst aufgerufen.
+    Es gibt weiterhin keine Armatur mit Knochen-Hierarchie. Statt einzelne
+    Bloecke zu drehen, werden die zusammengehoerigen R15-Teile einer Gruppe
+    (z. B. LeftUpperArm + LeftLowerArm + LeftHand) an ein Empty gehaengt.
+    Die Emote-Rotation wirkt dann auf die ganze Gruppe um ihren gemeinsamen
+    Mittelpunkt. Rueckgabe sind die Empties, damit Accessoires mitbewegt
+    werden koennen. Bei ``pose = "None"`` wird diese Funktion nicht aufgerufen.
     """
     preview = getattr(classic_emote, "preview_keyframe", None)
     poses = getattr(preview, "poses", {}) if preview is not None else {}
+    group_empties: dict[str, Any] = {}
+
+    for group_name, part_names in R15_EMOTE_GROUPS.items():
+        group_parts = [body_objects[name] for name in part_names if name in body_objects]
+        if not group_parts:
+            continue
+        bpy.context.view_layer.update()
+        lo = np.array([math.inf, math.inf, math.inf], dtype=np.float64)
+        hi = np.array([-math.inf, -math.inf, -math.inf], dtype=np.float64)
+        for obj in group_parts:
+            corners = np.asarray([tuple(c) for c in obj.bound_box], dtype=np.float64)
+            mw = np.asarray(obj.matrix_world, dtype=np.float64)
+            world = corners @ mw[:3, :3].T + mw[:3, 3]
+            lo = np.minimum(lo, world.min(axis=0))
+            hi = np.maximum(hi, world.max(axis=0))
+        pivot = (lo + hi) / 2.0
+
+        empty = bpy.data.objects.new(f"ClassicR15Group_{group_name}", None)
+        scene.collection.objects.link(empty)
+        empty.matrix_world = Matrix(_translation_mat4(*pivot).tolist())
+        bpy.context.view_layer.update()
+        inverse = np.linalg.inv(np.asarray(empty.matrix_world, dtype=np.float64))
+        for obj in group_parts:
+            obj.parent = empty
+            obj.matrix_parent_inverse = Matrix(inverse.tolist())
+        group_empties[group_name] = empty
+
     applied = 0
     for pose_name, cf in poses.items():
         part = _pose_part_name(pose_name)
-        obj = body_objects.get(part) if part else None
-        if obj is None or cf is None or len(cf) != 12:
+        empty = group_empties.get(part) if part else None
+        if empty is None or cf is None or len(cf) != 12:
             continue
         r_rbx = np.asarray(cf[3:12], dtype=np.float64).reshape(3, 3)
         r_bl = T3_RBX_TO_BL @ r_rbx @ T3_RBX_TO_BL
         rot4 = np.eye(4, dtype=np.float64)
         rot4[:3, :3] = r_bl
-        pivot = np.asarray(obj.matrix_world.translation, dtype=np.float64)
+        pivot = np.asarray(empty.matrix_world.translation, dtype=np.float64)
         around_pivot = _translation_mat4(*pivot) @ rot4 @ _translation_mat4(*(-pivot))
-        obj.matrix_world = Matrix(around_pivot.tolist()) @ obj.matrix_world
+        empty.matrix_world = Matrix(around_pivot.tolist()) @ empty.matrix_world
         applied += 1
     print(
-        f"[classic] Emote-Pose auf {applied} Platzhalter-Bloecke angewendet "
-        "(kein R15-Rig-Blend vorhanden)."
+        f"[classic] Emote-Pose auf {applied} von {len(group_empties)} "
+        "R15-Koerpergruppen angewendet (Gruppen-Empties statt Armatur)."
     )
+    return group_empties
 
 
 def render_classic_scene(
@@ -468,7 +534,11 @@ def render_classic_scene(
     classic_abstand_oben: float = 0.0,
     classic_abstand_unten: float = 0.0,
 ) -> None:
-    """Rendert ClassicType in einer eigenen Szene -- ohne R6-Blend-Datei."""
+    """Rendert ClassicType in einer eigenen Szene -- ohne R6-Blend-Datei.
+
+    Der Koerper kommt aus dem offiziellen Standard-R15-Blocky-Rig
+    (``ClassicType/assets/r15_blocky.json.gz``), nicht aus Platzhalter-Quadern.
+    """
     _require_bpy()
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -478,15 +548,18 @@ def render_classic_scene(
     scene, camera = _build_empty_scene(res_x, res_y)
     render_objects: list[Any] = []
     body_objects: dict[str, Any] = {}
+    accessory_parents: list[tuple[Any, str]] = []
+    group_empties: dict[str, Any] = {}
 
-    # 1. Platzhalter-Koerper: sechs farbige Bloecke in den BodyColors des Avatars.
-    for name, size, pos, color_key in BODY_BLOCKS:
-        rgb = bundle.body_colors.get(color_key, DEFAULT_BODY_RGB[color_key])
+    # 1. Offizieller Standard-R15-Blocky-Rig: 15 Meshes in den BodyColors.
+    #    Fehlende Koerperteil-Assets aus dem Inventar werden so exakt durch
+    #    Roblox' Standardteile ersetzt, nicht durch einfache Quader.
+    official_parts = load_r15_blocky_rig()
+    for name, part in official_parts.items():
+        rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
         srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
         material = _solid_material(f"Classic{name}Mat", srgb, material_finish)
-        body_objects[name] = _create_body_block(
-            name, size, pos, material, scene, render_objects
-        )
+        body_objects[name] = _create_r15_part(part, material, scene, render_objects)
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.
     accessory_count = 0
@@ -520,11 +593,20 @@ def render_classic_scene(
         scene.collection.objects.link(obj)
         obj.matrix_world = _accessory_matrix_bl(acc)
         render_objects.append(obj)
+        accessory_parents.append((obj, _accessory_group(acc)))
         accessory_count += 1
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote") and classic_emote is not None:
-        _apply_emote_to_blocks(classic_emote, body_objects)
+        group_empties = _apply_emote_to_r15(classic_emote, body_objects, scene)
+        bpy.context.view_layer.update()
+        for obj, group_name in accessory_parents:
+            empty = group_empties.get(group_name)
+            if empty is None:
+                continue
+            inverse = np.linalg.inv(np.asarray(empty.matrix_world, dtype=np.float64))
+            obj.parent = empty
+            obj.matrix_parent_inverse = Matrix(inverse.tolist())
     elif classic_pose not in ("None", "Equipped", "Emote"):
         print(f"[classic] Unbekannte Pose {classic_pose!r} - normales Stehen wird verwendet.")
 
@@ -562,8 +644,14 @@ def render_classic_scene(
         @ _translation_mat4(*(-center))
     )
     transform_bl = Matrix(transform.tolist())
-    for obj in render_objects:
+    # Nur Top-Level-Objekte transformieren. Objekte, die bei einem Emote an
+    # ein Gruppen-Empty gehaengt wurden, folgen ihrem Parent automatisch.
+    transform_targets = [
+        obj for obj in render_objects if getattr(obj, "parent", None) is None
+    ] + list(group_empties.values())
+    for obj in transform_targets:
         obj.matrix_world = transform_bl @ obj.matrix_world
+    bpy.context.view_layer.update()
 
     final_bbox = _world_bbox(render_objects)
     if final_bbox is None:  # pragma: no cover - defensive

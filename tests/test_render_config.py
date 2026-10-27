@@ -296,6 +296,38 @@ class RenderConfigTests(unittest.TestCase):
         self.assertNotIn("open_mainfile", r15_source)
         self.assertNotIn("WomanRig.blend", r15_source)
         self.assertIn("read_factory_settings", r15_source)
+        # Keine Quader-Platzhalter mehr: der offizielle R15-Blocky-Rig wird
+        # als reines Python-Asset geladen (kein bpy, keine Blend-Datei).
+        self.assertNotIn("BODY_BLOCKS", r15_source)
+        self.assertIn("load_r15_blocky_rig", r15_source)
+        self.assertIn("_create_r15_part", r15_source)
+        rig_source = (repo_root / "scripts/r15_blocky_rig.py").read_text(encoding="utf-8")
+        self.assertNotIn("import bpy", rig_source)
+        fbx = repo_root / "ClassicType" / "assets" / "R15_Block.fbx"
+        self.assertTrue(fbx.is_file())
+        self.assertTrue(fbx.read_bytes().startswith(b"Kaydara FBX Binary"))
+
+        from scripts.r15_blocky_rig import (
+            ATTACHMENT_MODEL_NAMES,
+            EXPECTED_PARTS,
+            load_r15_attachments,
+            load_r15_blocky_rig,
+        )
+
+        parts = load_r15_blocky_rig()
+        self.assertEqual(len(parts), len(EXPECTED_PARTS))
+        self.assertIn("UpperTorso", parts)
+        self.assertEqual(parts["LeftHand"].color_key, "leftArm")
+        for name in EXPECTED_PARTS:
+            with self.subTest(part=name):
+                self.assertIn(name, parts)
+                self.assertGreater(len(parts[name].vertices), 0)
+                self.assertGreater(len(parts[name].faces), 0)
+                self.assertEqual(
+                    len(parts[name].uvs),
+                    sum(len(face) for face in parts[name].faces),
+                )
+        self.assertEqual(len(load_r15_attachments()), len(ATTACHMENT_MODEL_NAMES))
 
         pipeline_source = (repo_root / "scripts/run_render_pipeline.py").read_text(encoding="utf-8")
         main_source = pipeline_source.split("def main()", 1)[-1]
