@@ -18,7 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from PIL import Image
 
-from scripts.roblox_opencloud import PipelineError, _sanitize_secret, load_avatar_bundle
+from scripts.roblox_opencloud import PipelineError, _sanitize_secret, RobloxOpenCloudClient, load_avatar_bundle
 from scripts.render_config import (
     gfx_type_from_config_path,
     read_classic_config,
