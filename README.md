@@ -5,7 +5,7 @@ Vollautomatischer GitHub-Actions-Renderer für Roblox **R6-Avatare** auf Basis v
 ## Funktionsweise
 
 1. **`username.txt` bearbeiten**: Trage einen beliebigen Roblox-Benutzernamen in [`username.txt`](./username.txt) ein und speichere/committe die Änderung.
-   - **Kopf & Gesicht**: Der Kopf übernimmt immer die Kopf-BodyColor des Nutzers. Platzhalter-Texturen von Dynamic Heads werden ignoriert. 3D-Face-Accessoires (flache „Makeup“-Schalen, z. B. „Cute Squinting Face (3D)“) werden wie in R6 als flaches Gesichts-Decal auf den Kopf gelegt, statt als dunkle Platte vor dem Gesicht zu hängen.
+   - **Kopf & Gesicht**: Dynamic-/Custom-Heads behalten ihre eigene Mesh-UV-Map und Kopftextur; bei transparenten Texturbereichen wird die Head-BodyColor ergänzt. Nur der klassische R6-Kopf erhält das klassische Face-Decal. Brillen und andere Face-Accessoires bleiben echte Meshes und ersetzen niemals das Gesicht. Dynamische Gesichtsausdrücke werden im statischen Render nicht animiert.
    - **Materialien**: Körper, Kopf und Accessoires nutzen einen frisch aufgebauten, glänzenden Roblox-Kunststoff-Shader (Roughness ~0,13, Coat 0,32) mit Studio-Softboxen – unabhängig vom Shader-Baum aus `WomanRig.blend`.
 2. **Automatischer R6-Render (`.github/workflows/render-avatar.yml`)**:
    - Lädt über die **Roblox Open Cloud API** (`ROBLOX_API_KEY`) die Körperfarben, klassische Kleidung (`Shirt`, `Pants`, `T-Shirt`), das Gesicht (`Face`), den Kopf (`Head`) und alle starren R6-Accessoires (`Hat`, `Hair`, `Face`, `Neck`, `Shoulder`, `Front`, `Back`, `Waist`).

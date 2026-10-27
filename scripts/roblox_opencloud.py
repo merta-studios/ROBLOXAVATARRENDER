@@ -77,7 +77,7 @@ class PipelineError(RuntimeError):
 
 @dataclass
 class HeadSpec:
-    kind: str  # "classic_head" | "custom_mesh" | "headless"
+    kind: str  # "classic_head" | "custom_mesh" | "dynamic_head" | "headless"
     mesh: MeshData | None = None
     mesh_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
     mesh_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -349,43 +349,6 @@ class RobloxOpenCloudClient:
         self._asset_cache[asset_id] = data
         return data
 
-    def fetch_asset_thumbnail(self, asset_id: int, size: int = 420) -> Image.Image | None:
-        """Lädt das offizielle Roblox-Thumbnail eines Assets (PNG mit Alpha).
-
-        3D-Face-Accessoires ("Makeup"-Faces) haben in ihrem Asset eine reine
-        UV-/Platzhalter-Textur; Roblox selbst zeigt sie auf R6-Köpfen als
-        flaches Gesichts-Decal. Das Thumbnail liefert genau dieses flache
-        Artwork mit transparentem Hintergrund.
-        """
-        try:
-            resp = self._request(
-                "GET",
-                "https://thumbnails.roblox.com/v1/assets",
-                params={
-                    "assetIds": str(asset_id),
-                    "size": f"{size}x{size}",
-                    "format": "Png",
-                },
-            )
-            if resp.status_code != 200:
-                print(f"[thumb] Asset {asset_id}: HTTP {resp.status_code}")
-                return None
-            items = (resp.json() or {}).get("data") or []
-            url = items[0].get("imageUrl") if items else None
-            if not url:
-                print(f"[thumb] Asset {asset_id}: keine Bild-URL ({items})")
-                return None
-            img_resp = self._request("GET", url, timeout=30)
-            if img_resp.status_code != 200:
-                print(f"[thumb] Asset {asset_id}: CDN HTTP {img_resp.status_code}")
-                return None
-            img = Image.open(io.BytesIO(img_resp.content)).convert("RGBA")
-            print(f"[thumb] Asset {asset_id}: {img.size[0]}x{img.size[1]} RGBA geladen")
-            return img
-        except Exception as exc:  # pragma: no cover - Netzwerk/Format
-            print(f"[thumb] Asset {asset_id}: Fallback ({exc})")
-            return None
-
     def fetch_image(self, asset_id: int, max_depth: int = 3) -> Image.Image:
         """Lädt ein Bild-Asset (löst automatisch Shirt/Pants/Decal XML/RBXM-Wrapper auf)."""
         raw = self.fetch_asset_bytes(asset_id)
@@ -635,21 +598,6 @@ def _mesh_bbox_size(mesh: MeshData) -> tuple[float, float, float]:
     )
 
 
-def _is_flat_face_plate(
-    mesh: MeshData,
-    scale: tuple[float, float, float],
-    max_thickness_ratio: float = 0.3,
-) -> bool:
-    """Erkennt 3D-Gesichter: sehr flache Schalen (Dicke ≪ Breite/Höhe)."""
-    ext = _mesh_bbox_size(mesh)
-    dims = sorted(
-        abs(ext[i] * scale[i]) for i in range(3)
-    )
-    if dims[-1] <= 1e-6:
-        return False
-    return (dims[0] / dims[-1]) <= max_thickness_ratio
-
-
 def _compute_meshpart_scale(node: RbxNode, mesh: MeshData) -> tuple[float, float, float]:
     size = node.prop("Size", "size")
     init_size = node.prop("InitialSize")
@@ -710,7 +658,6 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
     )
 
     # 3. Kopf laden (Classic Head, Custom SpecialMesh Head, Headless oder DynamicHead)
-    face_decal_path: str | None = None
     head_spec = HeadSpec(
         kind="classic_head",
         skin_rgb=body_colors["head"],
@@ -723,7 +670,7 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
         try:
             roots = parse_rbx_model(raw_head)
             nodes = [n for r in roots for n in ([r] + r.descendants())]
-            # Prüfe auf MeshPart (DynamicHead) oder SpecialMesh (FileMesh)
+            # Dynamic heads sind MeshParts mit eigener, UV-gebundener Gesichts-/Kopftextur.
             mp = next((n for n in nodes if n.class_name == "MeshPart"), None)
             sm = next((n for n in nodes if n.class_name == "SpecialMesh"), None)
             if mp is not None:
@@ -738,7 +685,7 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
                     if max(ext[0] * mscale[0], ext[1] * mscale[1], ext[2] * mscale[2]) < 0.08:
                         head_spec.kind = "headless"
                     else:
-                        head_spec.kind = "custom_mesh"
+                        head_spec.kind = "dynamic_head"
                         head_spec.mesh = mdata
                         head_spec.mesh_scale = mscale
                         sa = mp.find_first_child_of_class("SurfaceAppearance")
@@ -746,17 +693,14 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
                             (sa.prop("ColorMap", "ColorMapContent") if sa else None)
                             or mp.prop("TextureID", "TextureId", "TextureContent")
                         )
-                        # Die Textur eines Dynamic Heads ist eine UV-/Platzhalter-Map
-                        # (kein Hautton). In R6 zählt die Kopf-BodyColor, das
-                        # Gesicht kommt als Decal darüber.
                         if tid:
                             himg = client.fetch_image(tid)
                             hp = str(work_dir / f"head_tex_{tid}.png")
                             himg.save(hp, format="PNG")
+                            head_spec.custom_texture_path = hp
                             print(
-                                f"[head] Dynamic-Head-Textur {tid} ignoriert "
-                                "(Platzhalter), Hautfarbe = BodyColor "
-                                f"{body_colors['head']}"
+                                f"[head] Dynamic-Head-Textur {tid} aktiv; "
+                                "Mesh-UVs und eingebautes Gesicht bleiben erhalten."
                             )
             elif sm is not None:
                 mtype = sm.prop("MeshType", default=0)
@@ -894,22 +838,10 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
             tex_path = str(work_dir / f"acc_{aid}_tex_{tex_id}.png")
             timg.save(tex_path, format="PNG")
 
-        # 3D-Gesichter ("Makeup"/Face-Accessoires) sind extrem flache Schalen,
-        # deren Asset-Textur nur eine UV-/Platzhalter-Map ist. In R6 zeigt
-        # Roblox sie als flaches Gesichts-Decal auf dem Kopf - würde man die
-        # Schale dreidimensional rendern, liegt ein dunkles Blech vor dem
-        # Gesicht (genau der "schwarze Kopf"-Fehler).
-        if atype_id == 42 and mesh_data is not None and _is_flat_face_plate(
-            mesh_data, mesh_scale
-        ):
-            if face_decal_path is None:
-                thumb = client.fetch_asset_thumbnail(aid)
-                if thumb is not None:
-                    decal_path = str(work_dir / f"face_decal_{aid}.png")
-                    thumb.save(decal_path, format="PNG")
-                    face_decal_path = decal_path
-                    print(f"[face] 3D-Face {aid} ('{aname}') als Gesichts-Decal übernommen")
-            continue
+        # Face-/Eyewear-Accessories bleiben Meshes. Ein dünner Bounding-Box-
+        # Anteil ist kein Beleg für ein 2D-Decal: Brillen haben dieselbe
+        # Geometrie-Eigenschaft und müssen mit ihrer eigenen UV-Textur erhalten
+        # bleiben.
 
         meta_info = item.get("meta") or {}
         mpos = meta_info.get("position") or {}
@@ -949,12 +881,6 @@ def load_avatar_bundle(username: str, api_key: str, work_dir: Path) -> AvatarBun
                 ),
             )
         )
-
-    # 3D-Face-Decal (falls vorhanden) hat Vorrang vor der klassischen Face-Textur
-    if face_decal_path is not None:
-        head_spec.face_texture_path = face_decal_path
-        head_spec.custom_texture_path = None
-        print(f"[head] Gesichts-Decal aktiv: {face_decal_path}")
 
     return AvatarBundle(
         username=canonical_name,

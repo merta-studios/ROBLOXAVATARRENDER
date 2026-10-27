@@ -344,6 +344,27 @@ def _bake_head_composite_texture(
     return str(out_path)
 
 
+def _prepare_custom_head_texture(
+    skin_rgb: tuple[int, int, int],
+    texture_path: str,
+    out_path: Path,
+) -> str:
+    """Preserve a custom head's own UV texture, filling only transparent pixels with BodyColor.
+
+    DynamicHead ColorMaps are authored for the head mesh's UV layout. Replacing
+    them with a projected classic face distorts or erases the actual face. When
+    the map contains alpha, its transparent areas are the skin-tone mask rather
+    than holes in the head, so fill those areas with the avatar's HeadColor.
+    """
+    image = Image.open(texture_path).convert("RGBA")
+    if image.getchannel("A").getextrema()[0] < 255:
+        skin = Image.new("RGBA", image.size, (*skin_rgb, 255))
+        skin.alpha_composite(image)
+        skin.convert("RGB").save(out_path, format="PNG")
+        return str(out_path)
+    return texture_path
+
+
 def _create_classic_r6_head_mesh(name: str = "R6ClassicHeadMesh") -> bpy.types.Mesh:
     """Erzeugt das authentische klassische Roblox R6 SpecialMesh(Head) mit glatten Bevels & Front-UVs."""
     # Rotationsprofil in (r, z_rel) von -0.60 bis +0.60 (Radius 0.60, Bevel-Radius 0.28)
@@ -706,11 +727,14 @@ def render_avatar_scene(
     # 3. Kopf auf dem geposten Rig platzieren (Zentrum = (0, 0, 4.5)_bl = (0, 4.5, 0)_rbx)
     head_spec: HeadSpec = bundle.head
     if head_spec.kind != "headless":
-        if head_spec.kind == "custom_mesh" and head_spec.mesh is not None:
-            # SpecialMesh-/Dynamic-Head-Texturen können schwarze Platzhalter-
-            # oder Canvas-Flächen enthalten. In der R6-Darstellung gilt stets
-            # die BodyColor als Haut; nur das Face-Decal wird darüber gelegt.
-            use_front_proj = head_spec.face_texture_path is not None
+        if head_spec.kind in {"custom_mesh", "dynamic_head"} and head_spec.mesh is not None:
+            has_custom_texture = bool(
+                head_spec.custom_texture_path
+                and Path(head_spec.custom_texture_path).is_file()
+            )
+            # Native dynamic/custom head maps use their own UVs. Only heads
+            # without an authored map get a projected classic R6 face fallback.
+            use_front_proj = not has_custom_texture and head_spec.face_texture_path is not None
             h_mesh = _build_blender_mesh_from_rbx(
                 "AvatarHeadMesh",
                 head_spec.mesh,
@@ -718,15 +742,20 @@ def render_avatar_scene(
                 head_spec.mesh_offset,
                 project_front_face_uv=use_front_proj,
             )
-            head_tex = (
-                _bake_head_composite_texture(
+            if has_custom_texture:
+                head_tex = _prepare_custom_head_texture(
+                    head_spec.skin_rgb,
+                    head_spec.custom_texture_path,
+                    work_dir / "head_custom_composite.png",
+                )
+            elif use_front_proj:
+                head_tex = _bake_head_composite_texture(
                     head_spec.skin_rgb,
                     head_spec.face_texture_path,
                     work_dir / "head_composite.png",
                 )
-                if use_front_proj
-                else None
-            )
+            else:
+                head_tex = None
         else:
             h_mesh = _create_classic_r6_head_mesh("AvatarClassicHeadMesh")
             head_tex = _bake_head_composite_texture(
