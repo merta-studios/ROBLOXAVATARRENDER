@@ -112,6 +112,7 @@ def main() -> int:
                     mesh_debug(client, int(mid), n["class"])
 
     bundle = load_avatar_bundle(username=username(), api_key=os.environ.get("ROBLOX_API_KEY", ""), work_dir=OUT)
+    dump_thumbnails(user_id)
     print(f"[bundle] head kind={bundle.head.kind} skin={bundle.head.skin_rgb} "
           f"custom_tex={bundle.head.custom_texture_path}")
     print("DEBUG_DUMP_OK")
@@ -120,3 +121,45 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def dump_thumbnails(user_id: int) -> None:
+    """Roblox-Thumbnails laden, um den Soll-Zustand zu sehen."""
+    import requests
+
+    urls = [
+        (
+            "thumb_asset_face.png",
+            "https://thumbnails.roblox.com/v1/assets",
+            {"assetIds": "12336869686", "size": "420x420", "format": "Png"},
+        ),
+        (
+            "thumb_asset_head.png",
+            "https://thumbnails.roblox.com/v1/assets",
+            {"assetIds": "126490632251585", "size": "420x420", "format": "Png"},
+        ),
+        (
+            "thumb_avatar_headshot.png",
+            "https://thumbnails.roblox.com/v1/users/avatar-headshot",
+            {"userIds": str(user_id), "size": "420x420", "format": "Png"},
+        ),
+        (
+            "thumb_avatar_full.png",
+            "https://thumbnails.roblox.com/v1/users/avatar",
+            {"userIds": str(user_id), "size": "420x420", "format": "Png"},
+        ),
+    ]
+    for name, url, params in urls:
+        try:
+            resp = requests.get(url, params=params, timeout=20)
+            data = resp.json()
+            print(f"[thumb] {name}: {resp.status_code} {str(data)[:300]}")
+            items = data.get("data") or []
+            if items:
+                img_url = items[0].get("imageUrl")
+                if img_url:
+                    img = requests.get(img_url, timeout=30)
+                    (OUT / name).write_bytes(img.content)
+                    print(f"[thumb]   gespeichert {name} {len(img.content)} bytes")
+        except Exception as exc:
+            print(f"[thumb] {name} fehlgeschlagen: {exc}")
