@@ -1,9 +1,9 @@
 {
-  "username": "DevCrypticV",
+  "username": "MertaStudios",
   "background": "transparent",
   "material": "Glossy",
   "outline": {
-    "thickness_percent": 0,
+    "thickness_percent": 1,
     "outside": true,
     "fade_start_percent": 0,
     "color": "white"
