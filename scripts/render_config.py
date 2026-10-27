@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image
 
+from scripts.background_catalog import ORIGINAL_FOLDER_BY_NAME
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BACKGROUND_DIR = REPO_ROOT / "backgrounds"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp"}
@@ -153,6 +155,19 @@ def resolve_background(value: str, work_dir: Path) -> tuple[str, str | None]:
     if len(matches) == 1:
         return "image", str(matches[0])
     if len(matches) > 1:
+        # A bare design name means its original uploaded palette. Explicit
+        # "color/design" values continue to select a particular recolor.
+        if not has_folder:
+            design_name = Path(requested).stem.casefold()
+            original_folder = ORIGINAL_FOLDER_BY_NAME.get(design_name)
+            original_matches = [
+                path for path in matches
+                if original_folder
+                and path.parent.relative_to(BACKGROUND_DIR).as_posix().casefold() == original_folder
+                and path.stem.casefold() == design_name
+            ]
+            if len(original_matches) == 1:
+                return "image", str(original_matches[0])
         choices = ", ".join(sorted(
             f"{p.parent.relative_to(BACKGROUND_DIR).as_posix()}/{p.stem}" for p in matches
         ))

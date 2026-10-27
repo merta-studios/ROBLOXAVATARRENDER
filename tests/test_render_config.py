@@ -94,6 +94,11 @@ class RenderConfigTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "mehrdeutig"):
                     resolve_background("same-design", root)
 
+    def test_bare_design_name_selects_its_original_color_folder(self):
+        kind, path = resolve_background("sternnebel", Path("/tmp"))
+        self.assertEqual(kind, "image")
+        self.assertEqual(Path(path), Path("backgrounds/rot/sternnebel.png").resolve())
+
     def test_resolves_transparent_and_color_backgrounds_without_files(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

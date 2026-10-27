@@ -7,32 +7,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from scripts.background_catalog import DESIGN_NAMES, ORIGINAL_COLORS
+
 ROOT = Path(__file__).resolve().parents[1]
 BACKGROUND_DIR = ROOT / "backgrounds"
-
-# Descriptive design names. Colors are represented only by their parent folder.
-BACKGROUND_NAMES = {
-    1: "herzen-konfetti",
-    2: "wirbel-linien",
-    3: "schachbrett-tunnel",
-    4: "marmor-wirbel",
-    5: "energie-wirbel",
-    6: "kreuz-strahl",
-    7: "glitzer-strahl",
-    8: "organische-formen",
-    9: "blueten-spritzer",
-    10: "stern-explosion",
-    11: "sonnenstrahlen",
-    12: "herzen-glitzer",
-    13: "neon-sterne",
-    14: "hologramm-prismen",
-    15: "optikwellen",
-    16: "stern-strahl",
-    17: "frostspritzer",
-    18: "kristallsplitter",
-    19: "fluid-wellen",
-    20: "sternnebel",
-}
+BACKGROUND_NAMES = DESIGN_NAMES
 
 # Previous flat filenames, kept here so running the script migrates them in place.
 LEGACY_NAMES = {
@@ -43,14 +22,6 @@ LEGACY_NAMES = {
     13: "smaragd-neonsterne", 14: "nacht-hologramm-prismen", 15: "blau-weisse-optikwellen",
     16: "smaragd-lichtstrahl", 17: "eisblau-frostspritzer", 18: "violett-kristallsplitter",
     19: "rosa-liquid-wellen", 20: "rot-schwarzer-sternnebel",
-}
-
-# Dominant original-image colors, determined from the uploaded previews.
-ORIGINAL_COLORS = {
-    1: "lila", 2: "lila", 3: "lila", 4: "lila", 5: "gruen",
-    6: "blau", 7: "blau", 8: "lila", 9: "pink", 10: "lila",
-    11: "gold", 12: "lila", 13: "tuerkis", 14: "blau", 15: "blau",
-    16: "tuerkis", 17: "blau", 18: "lila", 19: "pink", 20: "rot",
 }
 
 # Hue targets; the closest target to each original palette is omitted, leaving

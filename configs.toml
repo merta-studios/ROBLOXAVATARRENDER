@@ -2,7 +2,8 @@
 username = "Alamer_Roblox"
 
 # Erlaubt: "transparent", Hex-Farbe #RGB oder #RRGGBB,
-# direkte http(s)-Bild-URL (max. 50 MB) oder lokaler Name als "Farbordner/Motiv", z. B. "lila/herzen-konfetti".
+# direkte http(s)-Bild-URL (max. 50 MB), lokaler Motivname (Originalfarbe) oder
+# "Farbordner/Motiv" für eine bestimmte Variante, z. B. "lila/herzen-konfetti".
 # Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP.
 background = "sternnebel"
 
