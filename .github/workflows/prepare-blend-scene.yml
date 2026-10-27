@@ -1,7 +1,9 @@
 name: Prepare Saved Blender Scene
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - arena/17feec3c-robloxavatarrender
 
 permissions:
   contents: write

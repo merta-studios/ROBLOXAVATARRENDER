@@ -1,4 +1,4 @@
-"""Einmaliges Speichern des festen Render-Setups in WomanRig.blend.
+"""Einmaliges Speichern des festen Render-Setups in WomanRig.blend (in Blender 5.x).
 
 Ausführen mit Blender 5.x/bpy 5.x, z. B.:
     python scripts/configure_blend_scene.py --blend-file WomanRig.blend
