@@ -39,6 +39,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           LAST_MSG=$(git log -1 --pretty=%s "origin/$BRANCH")
+          RENDER_GFX_TYPE="HearthandsType"
 
           for attempt in 1 2 3; do
             git fetch origin main "$BRANCH"
@@ -52,6 +53,14 @@ jobs:
             RENDER_INPUTS_CHANGED="false"
             if ! git diff --quiet "origin/main...origin/$BRANCH" -- HearthandsType/ ClassicType/ backgrounds/ WomanRig.blend scripts/ tests/ requirements.txt; then
               RENDER_INPUTS_CHANGED="true"
+            fi
+
+            # Ohne expliziten Dispatch-Input wuerde der Render-Workflow immer
+            # HearthandsType nehmen. ClassicType-Aenderungen muessen dagegen
+            # auch den R15-Pfad in echter CI rendern.
+            RENDER_GFX_TYPE="HearthandsType"
+            if ! git diff --quiet "origin/main...origin/$BRANCH" -- ClassicType/; then
+              RENDER_GFX_TYPE="ClassicType"
             fi
 
             git checkout -B main origin/main
@@ -72,5 +81,5 @@ jobs:
 
           # Render-Eingabenänderungen manuell auslösen (GITHUB_TOKEN-Pushes starten kein push-Event)
           if [ "$RENDER_INPUTS_CHANGED" = "true" ]; then
-            gh workflow run render-avatar.yml --ref main || true
+            gh workflow run render-avatar.yml --ref main -f "gfx-type=$RENDER_GFX_TYPE" || true
           fi

@@ -57,3 +57,6 @@ fade_start_percent = 99
 
 # Erlaubt: Hex-Farbe #RGB oder #RRGGBB, außerdem "white" oder "black".
 color = "white"
+
+# Render-Hinweis: Dieser GFX-Typ wird mit einer eigenen leeren Szene
+# (scripts/classic_render.py) und ohne R6-Blend-Datei gerendert.

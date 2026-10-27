@@ -53,7 +53,7 @@ Ohne installiertes `bpy` laufen genau die 19 reinen Python-Tests; die Blender-Re
 
 ## Auto Merge & Bereinigung
 
-Wie bisher: Jeder Push auf einen Arbeitsbranch wird automatisch direkt nach `main` gemerged (keine Pull Requests, siehe [`AGENTS.md`](./AGENTS.md)). Änderungen an `HearthandsType/`, `ClassicType/`, `backgrounds/`, `WomanRig.blend`, `scripts/` oder `requirements.txt` starten auf `main` den Render-Workflow.
+Wie bisher: Jeder Push auf einen Arbeitsbranch wird automatisch direkt nach `main` gemerged (keine Pull Requests, siehe [`AGENTS.md`](./AGENTS.md)). Änderungen an `HearthandsType/`, `ClassicType/`, `backgrounds/`, `WomanRig.blend`, `scripts/`, `tests/` oder `requirements.txt` starten auf `main` den Render-Workflow. Wurde `ClassicType/` geändert, übergibt der Auto-Merge-Workflow explizit `gfx-type=ClassicType`; sonst rendert er `HearthandsType`.
 
 ## Einmalige Einrichtung
 
