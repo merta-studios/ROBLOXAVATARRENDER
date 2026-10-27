@@ -53,7 +53,7 @@ outside = false
 # Punkt, ab dem die Umrandung ausblendet (0 bis 100 Prozent der Umrandungsdicke).
 # 0 = Fade über die ganze Dicke; 50 = erste Hälfte deckend, danach Fade;
 # 100 = die gesamte Umrandung bleibt deckend.
-fade_start_percent = 50
+fade_start_percent = 100
 
 # Erlaubt: Hex-Farbe #RGB oder #RRGGBB, außerdem "white" oder "black".
 color = "white"
