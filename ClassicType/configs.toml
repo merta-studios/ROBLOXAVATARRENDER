@@ -1,5 +1,5 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "Alamer_Roblox"
+username = "asilblox0"
 
 # Hintergrund: "transparent", Hex-Farbe #RGB oder #RRGGBB, direkte http(s)-Bild-URL
 # (max. 50 MB), lokaler Motivname (Originalfarbe) oder "Farbordner/Motiv", z. B.
@@ -13,7 +13,7 @@ material = "Glossy"
 [outline]
 # Dicke in Prozent der Bildbreite (Dezimalzahlen erlaubt, 0 bis 100).
 # Bei 2000 px Bildbreite ist 1 = 20 px. 0 deaktiviert die Umrandung.
-thickness_percent = 0.5
+thickness_percent = 0.8
 
 # true = Umrandung nach außen vom Avatar weg; false = nach innen auf den Avatar.
 outside = false
@@ -21,7 +21,7 @@ outside = false
 # Punkt, ab dem die Umrandung ausblendet (0 bis 100 Prozent der Umrandungsdicke).
 # 0 = Fade über die ganze Dicke; 50 = erste Hälfte deckend, danach Fade;
 # 100 = die gesamte Umrandung bleibt deckend.
-fade_start_percent = 0
+fade_start_percent = 100
 
 # Erlaubt: Hex-Farbe #RGB oder #RRGGBB, außerdem "white" oder "black".
 color = "white"
@@ -45,12 +45,12 @@ emote_asset_id = 0
 
 # Drehung des Avatars in Grad um die vertikale Achse:
 # 0 = schaut zur Mitte, 45 = schräg nach rechts, -45 = schräg nach links.
-rotation_deg = 0
+rotation_deg = 30
 
 # Abstand von oben und unten in Prozent der Avatar-Höhe. Die Avatar-Höhe ist die
 # Länge zwischen dem höchsten und tiefsten Punkt des 3D-Modells.
 # 100 = oben bzw. unten noch eine komplette Avatar-Höhe Platz, bevor der Avatar
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
-abstand_oben = 0
-abstand_unten = 0
+abstand_oben = 5
+abstand_unten = 5
