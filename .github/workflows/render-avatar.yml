@@ -160,6 +160,17 @@ jobs:
             ERR_TEXT="Der Render-Workflow wurde abgebrochen oder ist fehlgeschlagen, bevor ein Fehlerbericht geschrieben werden konnte."
           fi
 
+          # Nur auf dem Session-Branch die exakte Fehlermeldung für CI-Diagnose
+          # hinterlegen; der veröffentlichte Summary-Inhalt bleibt unverändert.
+          if [ "${GITHUB_REF:-}" = "refs/heads/arena/17feec3c-robloxavatarrender" ]; then
+            printf '%s\n' "$ERR_TEXT" >render-diagnostic.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add render-diagnostic.txt
+            git commit -m "Record avatar render failure for diagnosis"
+            git push origin "HEAD:${GITHUB_REF}"
+          fi
+
           {
             echo "### Render-Fehler"
             echo ""
