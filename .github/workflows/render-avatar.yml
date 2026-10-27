@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   render:
-    name: R6 Avatar GFX Render (Blender EEVEE)
+    name: R6 Avatar GFX Render (Blender Cycles)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
@@ -47,7 +47,7 @@ jobs:
         run: |
           set -uo pipefail
 
-          # 1. System-Bibliotheken für Headless Blender 5.x EEVEE (OpenGL / EGL / Xvfb)
+          # 1. System-Bibliotheken für Headless Blender 5.x Cycles (Xvfb / OpenGL)
           if ! sudo apt-get update -qq >/tmp/setup.log 2>&1 || \
              ! sudo apt-get install -y --no-install-recommends \
                xvfb libegl1 libgl1 libgl1-mesa-dri libglx-mesa0 libgbm1 libgles2 \
@@ -74,7 +74,7 @@ jobs:
 
           mkdir -p /tmp/render_out
 
-          # 4. Roblox R6 Avatar via Open Cloud laden & mit WomanRig.blend in EEVEE rendern
+          # 4. Roblox R6 Avatar via Open Cloud laden & mit WomanRig.blend in Cycles rendern
           if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX +render -noreset" \
                python scripts/run_render_pipeline.py \
                  --username-file "$USER_FILE" \
@@ -112,7 +112,7 @@ jobs:
           gh release create latest-render /tmp/render_out/avatar.png \
             --target "$COMMIT_SHA" \
             --title "Aktuelles Avatar Render" \
-            --notes "Automatisch gerenderter Roblox R6 Avatar (Blender EEVEE, transparenter Hintergrund)." \
+            --notes "Automatisch gerenderter Roblox R6 Avatar (Blender Cycles, transparenter Hintergrund)." \
             >/dev/null 2>&1 || true
 
           echo "RENDER_IMAGE_URL=https://github.com/${GITHUB_REPOSITORY}/blob/${COMMIT_SHA}/avatar.png?raw=true" >> "$GITHUB_ENV"
