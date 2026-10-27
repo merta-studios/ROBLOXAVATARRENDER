@@ -7,10 +7,15 @@ Die Avatar-Pipeline ändert danach keine Kamera-, Licht- oder Engine-Werte mehr.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import bpy
 from mathutils import Vector
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.blender_render import _setup_studio_lighting_and_world
 

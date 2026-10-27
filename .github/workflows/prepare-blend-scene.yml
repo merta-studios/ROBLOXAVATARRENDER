@@ -43,7 +43,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add WomanRig.blend
+          rm -f .configure-scene-error.txt
+          git add -A WomanRig.blend .configure-scene-error.txt
           if git diff --cached --quiet; then
             echo "WomanRig.blend already contains the saved scene preset."
           else
