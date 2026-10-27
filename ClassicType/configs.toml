@@ -1,0 +1,56 @@
+# Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
+username = "Alamer_Roblox"
+
+# Hintergrund: "transparent", Hex-Farbe #RGB oder #RRGGBB, direkte http(s)-Bild-URL
+# (max. 50 MB), lokaler Motivname (Originalfarbe) oder "Farbordner/Motiv", z. B.
+# "lila/herzen-konfetti". Die Hintergründe selbst wohnen weiterhin im geteilten
+# Ordner backgrounds/ und sind nicht in diesen GFX-Typ-Ordner eingezogen.
+background = "transparent"
+
+# Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
+material = "Glossy"
+
+[outline]
+# Dicke in Prozent der Bildbreite (Dezimalzahlen erlaubt, 0 bis 100).
+# Bei 2000 px Bildbreite ist 1 = 20 px. 0 deaktiviert die Umrandung.
+thickness_percent = 0.5
+
+# true = Umrandung nach außen vom Avatar weg; false = nach innen auf den Avatar.
+outside = false
+
+# Punkt, ab dem die Umrandung ausblendet (0 bis 100 Prozent der Umrandungsdicke).
+# 0 = Fade über die ganze Dicke; 50 = erste Hälfte deckend, danach Fade;
+# 100 = die gesamte Umrandung bleibt deckend.
+fade_start_percent = 0
+
+# Erlaubt: Hex-Farbe #RGB oder #RRGGBB, außerdem "white" oder "black".
+color = "white"
+
+# Dieser GFX-Typ ("ClassicType") lädt den Avatar als R15 komplett von der
+# Roblox Open Cloud API (GET /v4/avatar/users/{userId}) statt aus dem R6-Rig-Setup
+# von HearthandsType. Layered Clothing (Asset-Typen 64 bis 72) und Accessoires
+# vom Typ "Equipment" werden nicht geladen.
+
+# Pose des Avatars:
+#   "None"      - normales Stehen (Standard)
+#   "Equipped"  - die am Avatar des Spielers bereits ausgerüstete Pose
+#                 (die auch auf seinem Profil am Avatar angewendet wird)
+#   "Emote"     - Pose aus einem Emote (Animation) nach emote_asset_id,
+#                 eingefroren am Moment, der auch in der Emote-Vorschau zu sehen ist
+#                 (wird per Roblox Open Cloud API abgerufen, nicht geraten)
+pose = "None"
+
+# Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
+emote_asset_id = 0
+
+# Drehung des Avatars in Grad um die vertikale Achse:
+# 0 = schaut zur Mitte, 45 = schräg nach rechts, -45 = schräg nach links.
+rotation_deg = 0
+
+# Abstand von oben und unten in Prozent der Avatar-Höhe. Die Avatar-Höhe ist die
+# Länge zwischen dem höchsten und tiefsten Punkt des 3D-Modells.
+# 100 = oben bzw. unten noch eine komplette Avatar-Höhe Platz, bevor der Avatar
+# beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
+# 10% in den Bildrand hinein.
+abstand_oben = 0
+abstand_unten = 0

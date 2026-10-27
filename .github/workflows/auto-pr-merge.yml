@@ -50,7 +50,7 @@ jobs:
             fi
 
             RENDER_INPUTS_CHANGED="false"
-            if ! git diff --quiet "origin/main...origin/$BRANCH" -- configs.toml backgrounds/ WomanRig.blend; then
+            if ! git diff --quiet "origin/main...origin/$BRANCH" -- HearthandsType/ ClassicType/ backgrounds/ WomanRig.blend; then
               RENDER_INPUTS_CHANGED="true"
             fi
 

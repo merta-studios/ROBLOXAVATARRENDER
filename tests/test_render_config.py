@@ -7,7 +7,13 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from scripts.render_config import normalize_color, read_config, resolve_background
+from scripts.render_config import (
+    gfx_type_from_config_path,
+    normalize_color,
+    read_classic_config,
+    read_config,
+    resolve_background,
+)
 
 
 class RenderConfigTests(unittest.TestCase):
@@ -104,6 +110,86 @@ class RenderConfigTests(unittest.TestCase):
             root = Path(temp)
             self.assertEqual(resolve_background("transparent", root), ("transparent", None))
             self.assertEqual(resolve_background("#12abef", root), ("color", "#12abef"))
+
+    def test_korblox_and_headless_default_to_false(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_config(Path(temp), {"username": "User"})
+            config = read_config(path)
+        self.assertFalse(config["korblox"])
+        self.assertFalse(config["headless"])
+
+    def test_korblox_and_headless_can_be_enabled(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_config(Path(temp), {
+                "username": "User",
+                "korblox": True,
+                "headless": True,
+            })
+            config = read_config(path)
+        self.assertTrue(config["korblox"])
+        self.assertTrue(config["headless"])
+
+    def test_korblox_and_headless_must_be_bool(self):
+        for override in [{"korblox": "yes"}, {"headless": 1}]:
+            with self.subTest(override=override), tempfile.TemporaryDirectory() as temp:
+                data = {"username": "User", **override}
+                path = self.write_config(Path(temp), data)
+                with self.assertRaisesRegex(ValueError, "muss true oder false sein"):
+                    read_config(path)
+
+    def test_reads_classic_config(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_config(Path(temp), {
+                "username": "@ClassicUser",
+                "background": "#ff0000",
+                "material": "matt",
+                "pose": "Emote",
+                "emote_asset_id": 12345678,
+                "rotation_deg": 45,
+                "abstand_oben": 10,
+                "abstand_unten": -10,
+                "outline": {"thickness_percent": 1.0, "outside": True, "fade_start_percent": 50, "color": "black"},
+            })
+            config = read_classic_config(path)
+        self.assertEqual(config["username"], "ClassicUser")
+        self.assertEqual(config["background"], "#ff0000")
+        self.assertEqual(config["material"], "Matt")
+        self.assertEqual(config["pose"], "Emote")
+        self.assertEqual(config["emote_asset_id"], 12345678)
+        self.assertEqual(config["rotation_deg"], 45.0)
+        self.assertEqual(config["abstand_oben"], 10.0)
+        self.assertEqual(config["abstand_unten"], -10.0)
+        self.assertEqual(config["outline"]["color"], "black")
+        self.assertFalse(config["korblox"])
+        self.assertFalse(config["headless"])
+
+    def test_classic_config_validates_pose_and_ranges(self):
+        cases = [
+            ({"pose": "Tanzt"}, "'pose' muss"),
+            ({"rotation_deg": 190}, "zwischen -180 und 180"),
+            ({"rotation_deg": -191}, "zwischen -180 und 180"),
+            ({"emote_asset_id": -5}, "nicht negativ"),
+        ]
+        for override, expected in cases:
+            with self.subTest(override=override), tempfile.TemporaryDirectory() as temp:
+                data = {"username": "User", **override}
+                path = self.write_config(Path(temp), data)
+                with self.assertRaisesRegex(ValueError, expected):
+                    read_classic_config(path)
+
+    def test_gfx_type_from_config_path(self):
+        self.assertEqual(gfx_type_from_config_path(Path("HearthandsType/configs.toml"), None), "HearthandsType")
+        self.assertEqual(gfx_type_from_config_path(Path("ClassicType/configs.toml"), None), "ClassicType")
+        self.assertEqual(gfx_type_from_config_path(Path("configs.toml"), None), "HearthandsType")
+        self.assertEqual(gfx_type_from_config_path(Path("HearthandsType/configs.toml"), "ClassicType"), "ClassicType")
+        with self.assertRaisesRegex(ValueError, "Unbekannter GFX-Typ"):
+            gfx_type_from_config_path(Path("x.toml"), "Nope")
+
+    def test_korblox_asset_id_matches_official_catalog(self):
+        """Die offizielle Korblox Deathspeaker Right Leg hat Asset-ID 139607718."""
+        from scripts.roblox_opencloud import KORBLOX_RIGHT_LEG_ASSET_ID
+
+        self.assertEqual(KORBLOX_RIGHT_LEG_ASSET_ID, 139607718)
 
 
 if __name__ == "__main__":

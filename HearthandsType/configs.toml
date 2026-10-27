@@ -10,6 +10,23 @@ background = "blau/sternnebel"
 # Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
 material = "Glossy"
 
+# Dieses Render ist der GFX-Typ "Preppy Hearthands Type". Seine Konfiguration
+# lebt (zusammen mit allem Render-Zugehörigen außer den geteilten Hintergründen
+# unter backgrounds/) im Ordner HearthandsType/.
+
+# Korblox Deathspeaker Right Leg (Asset-ID 139607718, offiziell von Roblox:
+# https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg).
+# Das echte Korblox-Bundle kostet 17.000 Robux und ist für viele nicht
+# bezahlbar, ist aber ein beliebter GFX-Look. Wenn true, wird das rechte Bein
+# im Render durch das Korblox-Bein ersetzt (mit dessen eigenen Materialien/
+# Texturen).
+korblox = false
+
+# Headless Horseman-Look: Wenn true, wird der Kopf unsichtbar gemacht und
+# auch die Gesicht-Accessoires (z. B. Brillen oder Masken) ausgeblendet.
+# Haare, Hüte und Hals-Accessoires bleiben sichtbar.
+headless = false
+
 [outline]
 # Dicke in Prozent der Bildbreite (Dezimalzahlen erlaubt, 0 bis 100).
 # Bei 2000 px Bildbreite ist 1 = 20 px. 0 deaktiviert die Umrandung.

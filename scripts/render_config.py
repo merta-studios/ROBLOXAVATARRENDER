@@ -21,6 +21,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "username": "",
     "background": "transparent",
     "material": "Glossy",
+    # GFX-Typ "HearthandsType" (Preppy Hearthands Type): ersetzt das rechte Bein
+    # durch das Korblox Deathspeaker Right Leg (Asset-ID 139607718) und/oder
+    # blendet Kopf und Gesicht-Accessoires für den Headless-Look aus.
+    "korblox": False,
+    "headless": False,
     "outline": {
         "thickness_percent": 0,
         "outside": True,
@@ -28,6 +33,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "color": "white",
     },
 }
+
+# GFX-Typen, für die es einen eigenen Konfigurationsordner gibt.
+GFX_TYPES = ("HearthandsType", "ClassicType")
+
+# ClassicType-Posen: "None" = normales Stehen, "Equipped" = am Spielerprofil
+# ausgerüstete Pose, "Emote" = Pose aus einem Emote (Asset-ID).
+CLASSIC_POSES = ("None", "Equipped", "Emote")
 
 
 def read_config(path: Path) -> dict[str, Any]:
@@ -89,7 +101,128 @@ def read_config(path: Path) -> dict[str, Any]:
     outline_cfg["fade_start_percent"] = fade
     outline_color = str(outline_cfg["color"]).strip()
     normalize_color(outline_color)  # sofort prüfen; den editierbaren TOML-String beibehalten
+
+    for bool_key in ("korblox", "headless"):
+        if not isinstance(config[bool_key], bool):
+            raise ValueError(f"'{bool_key}' muss true oder false sein.")
+
     return config
+
+
+def read_classic_config(path: Path) -> dict[str, Any]:
+    """Liest und validiert die Konfiguration des GFX-Typs 'ClassicType'.
+
+    ClassicType lädt den Avatar als R15 komplett von der Roblox Open Cloud API
+    (GET /v4/avatar/users/{userId}) und verzichtet auf Layered Clothing sowie
+    Accessoires vom Typ "Equipment". Neben den gemeinsamen Einstellungen
+    (username, background, material, outline) definiert es Pose, Drehung und
+    den Abstand von oben/unten des fertigen Avatars im Bild.
+    """
+    if not path.is_file():
+        raise ValueError(f"Die Konfigurationsdatei '{path.name}' wurde nicht gefunden.")
+    text = path.read_text(encoding="utf-8-sig").strip()
+    if not text:
+        raise ValueError(f"Die Konfigurationsdatei '{path.name}' ist leer.")
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"Ungültiges TOML in '{path.name}': {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("Die Konfiguration muss ein TOML-Objekt sein.")
+    config = {**DEFAULT_CONFIG, **parsed}
+
+    username = str(config["username"]).strip().lstrip("@").strip()
+    if not username:
+        raise ValueError("Bitte in configs.toml unter 'username' einen Roblox-Benutzernamen eintragen.")
+    config["username"] = username
+
+    material = str(config["material"]).strip().casefold()
+    if material not in {"glossy", "matt"}:
+        raise ValueError("'material' muss genau 'Glossy' oder 'Matt' sein.")
+    config["material"] = "Glossy" if material == "glossy" else "Matt"
+
+    bg = str(config["background"]).strip()
+    if not bg:
+        raise ValueError("'background' darf nicht leer sein; nutze 'transparent', eine lokale Datei, URL oder Hex-Farbe.")
+    if bg.casefold() == "transparent":
+        config["background"] = "transparent"
+    elif HEX_COLOR.fullmatch(bg):
+        config["background"] = bg if bg.startswith("#") else f"#{bg}"
+    elif urlparse(bg).scheme:
+        if urlparse(bg).scheme not in {"http", "https"} or not urlparse(bg).netloc:
+            raise ValueError("Hintergrund-URLs müssen gültige http:// oder https:// URLs sein.")
+        config["background"] = bg
+    else:
+        config["background"] = bg
+
+    outline = parsed.get("outline", {})
+    if not isinstance(outline, dict):
+        raise ValueError("'outline' muss ein TOML-Abschnitt mit Schlüssel-Wert-Paaren sein.")
+    config["outline"] = {**DEFAULT_CONFIG["outline"], **outline}
+    outline_cfg = config["outline"]
+    try:
+        thickness = float(outline_cfg["thickness_percent"])
+        fade = float(outline_cfg["fade_start_percent"])
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ValueError("Umrandungsdicke und Transparenzstart müssen Zahlen sein.") from exc
+    if not 0 <= thickness <= 100:
+        raise ValueError("'thickness_percent' muss zwischen 0 und 100 liegen.")
+    if not 0 <= fade <= 100:
+        raise ValueError("'fade_start_percent' muss zwischen 0 und 100 liegen.")
+    if not isinstance(outline_cfg["outside"], bool):
+        raise ValueError("'outline.outside' muss true oder false sein.")
+    outline_cfg["thickness_percent"] = thickness
+    outline_cfg["fade_start_percent"] = fade
+    outline_color = str(outline_cfg["color"]).strip()
+    normalize_color(outline_color)
+
+    pose = str(config.get("pose", "None")).strip()
+    if pose not in CLASSIC_POSES:
+        raise ValueError(
+            f"'pose' muss einer von {', '.join(CLASSIC_POSES)} sein, erhalten: {pose!r}."
+        )
+    config["pose"] = pose
+
+    try:
+        emote_asset_id = int(config.get("emote_asset_id", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("'emote_asset_id' muss eine ganze Zahl sein.") from exc
+    if emote_asset_id < 0:
+        raise ValueError("'emote_asset_id' darf nicht negativ sein.")
+    config["emote_asset_id"] = emote_asset_id
+
+    try:
+        rotation_deg = float(config.get("rotation_deg", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("'rotation_deg' muss eine Zahl sein (Grad).") from exc
+    if not -180.0 <= rotation_deg <= 180.0:
+        raise ValueError("'rotation_deg' muss zwischen -180 und 180 liegen.")
+    config["rotation_deg"] = rotation_deg
+
+    for key in ("abstand_oben", "abstand_unten"):
+        try:
+            value = float(config.get(key, 0))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"'{key}' muss eine Zahl sein (Prozent der Avatar-Höhe).") from exc
+        config[key] = value
+
+    return config
+
+
+def gfx_type_from_config_path(config_file: Path, gfx_type: str | None) -> str:
+    """Ermittelt den GFX-Typ: erst das explizite Argument, sonst den Namen des
+    übergeordneten Ordners der Konfigurationsdatei, falls dieser einem bekannten
+    GFX-Typ entspricht, andernfalls 'HearthandsType'."""
+    if gfx_type:
+        if gfx_type not in GFX_TYPES:
+            raise ValueError(
+                f"Unbekannter GFX-Typ '{gfx_type}'. Erlaubt: {', '.join(GFX_TYPES)}."
+            )
+        return gfx_type
+    parent = config_file.parent.name
+    if parent in GFX_TYPES:
+        return parent
+    return "HearthandsType"
 
 
 def normalize_color(value: str) -> tuple[int, int, int]:
