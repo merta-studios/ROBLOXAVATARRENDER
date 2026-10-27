@@ -13,7 +13,7 @@ material = "Glossy"
 [outline]
 # Dicke in Prozent der Bildbreite (Dezimalzahlen erlaubt, 0 bis 100).
 # Bei 2000 px Bildbreite ist 1 = 20 px. 0 deaktiviert die Umrandung.
-thickness_percent = 0.8
+thickness_percent = 0.5
 
 # true = Umrandung nach außen vom Avatar weg; false = nach innen auf den Avatar.
 outside = false
