@@ -27,7 +27,18 @@ jobs:
             libxcursor1 libxinerama1 libxrandr2
           pip install --quiet -r requirements.txt
       - name: Save fixed camera, lighting and render settings to WomanRig.blend
-        run: python scripts/configure_blend_scene.py --blend-file WomanRig.blend
+        run: |
+          if ! xvfb-run -a python scripts/configure_blend_scene.py --blend-file WomanRig.blend >/tmp/configure.log 2>&1; then
+            cat /tmp/configure.log
+            cp /tmp/configure.log .configure-scene-error.txt
+            git add .configure-scene-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Record saved scene setup error for diagnosis"
+            git push origin "HEAD:${GITHUB_REF}"
+            exit 1
+          fi
+          cat /tmp/configure.log
       - name: Commit the configured Blend file to this session branch
         run: |
           git config user.name "github-actions[bot]"
