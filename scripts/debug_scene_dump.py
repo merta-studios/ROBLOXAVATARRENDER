@@ -98,7 +98,7 @@ def main() -> int:
 
     for item in assets:
         atype = int((item.get("assetType") or {}).get("id") or 0)
-        if atype in (17, 42, 41, 8):
+        if atype in (17, 42, 41, 8, 79):
             nodes = dump_asset_tree(client, int(item["id"]), str(item.get("name"))[:20])
             for n in nodes:
                 mid = None
