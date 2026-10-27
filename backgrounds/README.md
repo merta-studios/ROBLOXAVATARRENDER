@@ -1,6 +1,6 @@
 # Lokale Hintergründe
 
-Alle Bilder liegen in nach tatsächlicher Farbe benannten Unterordnern. Die Dateinamen beschreiben nur das Motiv, keine Farbe. Für die Auswahl in `configs.toml` den Ordner und Motivnamen verwenden, z. B. `lila/herzen-konfetti` oder `rot/herzen-konfetti`. Die Erweiterung `.png` ist optional. Wenn ein Motivname in mehreren Farben existiert, ist der Ordner erforderlich.
+Alle Bilder liegen in nach tatsächlicher Farbe benannten Unterordnern. Die Dateinamen beschreiben nur das Motiv, keine Farbe. Für eine bestimmte Farbe in `configs.toml` Ordner und Motivnamen verwenden, z. B. `lila/herzen-konfetti` oder `blau/herzen-konfetti`. Die Erweiterung `.png` ist optional. Ein unqualifizierter Name wie `sternnebel` wählt automatisch die Originalfarbe des hochgeladenen Motivs.
 
 Jedes Motiv liegt im Ordner seiner Originalfarbe sowie in drei zusätzlichen Farbvarianten. Die Varianten werden in die Ordner `rot`, `blau`, `gruen` und `gold` einsortiert; pro Motiv wird die Variante ausgelassen, die der Originalfarbe am nächsten liegt. So steht die Farbe nur im Ordnernamen, nicht zusätzlich im Dateinamen. Transparente Bereiche und Helligkeitsdetails bleiben erhalten.
 
