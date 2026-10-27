@@ -4,8 +4,13 @@ on:
   push:
     branches:
       - main
+      - arena/17feec3c-robloxavatarrender
     paths:
       - 'username.txt'
+      - 'WomanRig.blend'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/render-avatar.yml'
   workflow_dispatch:
     inputs:
       username:
@@ -65,7 +70,18 @@ jobs:
             exit 1
           fi
 
-          # 3. Benutzername-Quelle bestimmen
+          # 3. Blender-Regressionstests (Face-Keying, Szene-Preset, Materialien)
+          if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a python -m unittest discover -s tests -v \
+               >/tmp/test_stdout.log 2>/tmp/test_stderr.log; then
+            {
+              echo "Blender-Regressionstests fehlgeschlagen:"
+              cat /tmp/test_stdout.log
+              cat /tmp/test_stderr.log
+            } >/tmp/fatal_error.txt
+            exit 1
+          fi
+
+          # 4. Benutzername-Quelle bestimmen
           USER_FILE="username.txt"
           if [ -n "${INPUT_USERNAME:-}" ]; then
             printf "%s\n" "$INPUT_USERNAME" >/tmp/override_username.txt
@@ -74,7 +90,7 @@ jobs:
 
           mkdir -p /tmp/render_out
 
-          # 4. Roblox R6 Avatar via Open Cloud laden & mit WomanRig.blend in Cycles rendern
+          # 5. Roblox R6 Avatar via Open Cloud laden & mit WomanRig.blend in Cycles rendern
           if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX +render -noreset" \
                python scripts/run_render_pipeline.py \
                  --username-file "$USER_FILE" \
