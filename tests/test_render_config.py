@@ -12,9 +12,26 @@ from scripts.render_config import normalize_color, read_config, resolve_backgrou
 
 class RenderConfigTests(unittest.TestCase):
     def write_config(self, directory: Path, data: dict) -> Path:
-        path = directory / "configs.json"
-        path.write_text(json.dumps(data), encoding="utf-8")
+        path = directory / "configs.toml"
+        lines = []
+        for key, value in data.items():
+            if key == "outline":
+                continue
+            lines.append(f"{key} = {self.toml_value(value)}")
+        if "outline" in data:
+            lines.append("\n[outline]")
+            for key, value in data["outline"].items():
+                lines.append(f"{key} = {self.toml_value(value)}")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return path
+
+    @staticmethod
+    def toml_value(value) -> str:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, str):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
 
     def test_reads_defaults_and_normalizes_configuration(self):
         with tempfile.TemporaryDirectory() as temp:

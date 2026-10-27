@@ -41,7 +41,7 @@ def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rendert einen Roblox R6 Avatar mit WomanRig.blend in Blender Cycles.")
-    parser.add_argument("--config-file", default="configs.json", help="Pfad zur JSON-Konfiguration für Avatar und Render.")
+    parser.add_argument("--config-file", default="configs.toml", help="Pfad zur kommentierten TOML-Konfiguration für Avatar und Render.")
     parser.add_argument("--blend-file", default="WomanRig.blend", help="Pfad zur WomanRig.blend Datei.")
     parser.add_argument("--output", default="render/latest.png", help="Zielpfad für das gerenderte transparente PNG.")
     parser.add_argument("--status-json", default="/tmp/render_status.json", help="Pfad für den strukturierten Ergebnis-Report.")

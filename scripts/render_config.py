@@ -1,7 +1,8 @@
-"""Load and validate the repository's user-facing render configuration."""
+"""Load and validate the repository's commented TOML render configuration."""
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -28,29 +29,27 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 def read_config(path: Path) -> dict[str, Any]:
-    """Parse and validate the JSON configuration used by the render pipeline."""
+    """Parse and validate the commented TOML configuration used for rendering."""
     if not path.is_file():
         raise ValueError(f"Die Konfigurationsdatei '{path.name}' wurde nicht gefunden.")
     text = path.read_text(encoding="utf-8-sig").strip()
     if not text:
         raise ValueError(f"Die Konfigurationsdatei '{path.name}' ist leer.")
     try:
-        import json
-
-        parsed = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Ungültiges JSON in '{path.name}': {exc.msg} (Zeile {exc.lineno}).") from exc
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"Ungültiges TOML in '{path.name}': {exc}") from exc
     if not isinstance(parsed, dict):
-        raise ValueError("Die Konfiguration muss ein JSON-Objekt sein.")
+        raise ValueError("Die Konfiguration muss ein TOML-Objekt sein.")
     config = {**DEFAULT_CONFIG, **parsed}
     outline = parsed.get("outline", {})
     if not isinstance(outline, dict):
-        raise ValueError("'outline' muss ein JSON-Objekt sein.")
+        raise ValueError("'outline' muss ein TOML-Abschnitt mit Schlüssel-Wert-Paaren sein.")
     config["outline"] = {**DEFAULT_CONFIG["outline"], **outline}
 
     username = str(config["username"]).strip().lstrip("@").strip()
     if not username:
-        raise ValueError("Bitte in configs.json unter 'username' einen Roblox-Benutzernamen eintragen.")
+        raise ValueError("Bitte in configs.toml unter 'username' einen Roblox-Benutzernamen eintragen.")
     config["username"] = username
 
     material = str(config["material"]).strip().casefold()
@@ -87,7 +86,7 @@ def read_config(path: Path) -> dict[str, Any]:
     outline_cfg["thickness_percent"] = thickness
     outline_cfg["fade_start_percent"] = fade
     outline_color = str(outline_cfg["color"]).strip()
-    normalize_color(outline_color)  # validate now; preserve the editable JSON string
+    normalize_color(outline_color)  # sofort prüfen; den editierbaren TOML-String beibehalten
     return config
 
 
