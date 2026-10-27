@@ -65,7 +65,8 @@ def main() -> int:
             raise PipelineError(f"Die Blender-Datei '{blend_path.name}' wurde im Repository nicht gefunden.")
 
         try:
-            gfx_type = gfx_type_from_config_path(config_file, args.gfx_type)
+            gfx_type_arg = args.gfx_type or None  # leerer String wird zu None
+            gfx_type = gfx_type_from_config_path(config_file, gfx_type_arg)
             if gfx_type == "ClassicType":
                 config = read_classic_config(config_file)
             else:
