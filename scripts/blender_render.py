@@ -120,10 +120,10 @@ def _find_principled_and_tex(mat: bpy.types.Material):
 
 
 # Glänzender Roblox-Kunststoff (GFX-Look): niedrige Roughness + klarer Klarlack.
-GLOSS_ROUGHNESS = 0.09
+GLOSS_ROUGHNESS = 0.13
 GLOSS_SPECULAR_IOR_LEVEL = 0.55
-GLOSS_COAT_WEIGHT = 0.45
-GLOSS_COAT_ROUGHNESS = 0.035
+GLOSS_COAT_WEIGHT = 0.32
+GLOSS_COAT_ROUGHNESS = 0.06
 GLOSS_IOR = 1.5
 
 
@@ -505,10 +505,10 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
     ramp.color_ramp.interpolation = "LINEAR"
     stops: list[tuple[float, tuple[float, float, float, float]]] = [
         (0.00, (0.020, 0.022, 0.028, 1.0)),  # unten: dunkler Boden
-        (0.42, (0.090, 0.100, 0.125, 1.0)),
-        (0.50, (1.900, 2.000, 2.200, 1.0)),  # harte Horizontkante = Reflexionslinie
-        (0.56, (0.300, 0.320, 0.360, 1.0)),
-        (1.00, (1.100, 1.150, 1.300, 1.0)),  # oben: heller Himmel/Softbox
+        (0.38, (0.080, 0.090, 0.110, 1.0)),
+        (0.50, (0.520, 0.550, 0.620, 1.0)),  # Horizontkante = Reflexionslinie
+        (0.56, (0.180, 0.190, 0.215, 1.0)),
+        (1.00, (0.620, 0.650, 0.720, 1.0)),  # oben: heller Himmel/Softbox
     ]
     elements = ramp.color_ramp.elements
     while len(elements) > 1:
@@ -519,7 +519,7 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
         el.color = col
 
     bg = tree.nodes.new("ShaderNodeBackground")
-    bg.inputs["Strength"].default_value = 0.85
+    bg.inputs["Strength"].default_value = 0.75
     out = tree.nodes.new("ShaderNodeOutputWorld")
 
     tree.links.new(tex_coord.outputs["Generated"], sep_xyz.inputs["Vector"])
@@ -547,12 +547,18 @@ def _setup_studio_lighting_and_world(scene: bpy.types.Scene) -> None:
         direction = Vector(target) - Vector(loc)
         lobj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
-    # Klassisches GFX-Setup: harte Key-/Rim-Highlights + weiches Fill.
-    add_area_light("GFX_KeyLight", (-2.8, -4.6, 5.4), (0.0, 0.0, 3.4), 420.0, 1.7, (1.0, 0.98, 0.95))
-    add_area_light("GFX_FillLight", (3.6, -4.2, 2.9), (0.0, 0.0, 2.8), 150.0, 3.2, (0.92, 0.95, 1.0))
-    add_area_light("GFX_RimLight", (0.8, 3.8, 5.4), (0.0, 0.0, 3.6), 320.0, 1.3, (1.0, 1.0, 1.0))
-    add_area_light("GFX_TopSoftbox", (0.0, -1.2, 7.4), (0.0, 0.0, 4.4), 240.0, 2.6, (1.0, 1.0, 1.0))
-    add_area_light("GFX_Kicker", (3.0, -1.4, 4.4), (0.0, 0.0, 3.8), 110.0, 0.8, (1.0, 0.99, 0.97))
+    # GFX-Setup: grosse, weiche Softboxen -> gleichmäßiger Glanz statt harter
+    # weisser Rechteck-Reflexe auf dem Kunststoff.
+    add_area_light("GFX_KeyLight", (-2.8, -4.6, 5.4), (0.0, 0.0, 3.4), 150.0, 3.4,
+                   (1.0, 0.98, 0.95), shape="DISK")
+    add_area_light("GFX_FillLight", (3.6, -4.2, 2.9), (0.0, 0.0, 2.8), 90.0, 4.2,
+                   (0.92, 0.95, 1.0), shape="DISK")
+    add_area_light("GFX_RimLight", (0.8, 3.8, 5.4), (0.0, 0.0, 3.6), 130.0, 2.6,
+                   (1.0, 1.0, 1.0), shape="DISK")
+    add_area_light("GFX_TopSoftbox", (0.0, -1.2, 7.4), (0.0, 0.0, 4.4), 110.0, 3.4,
+                   (1.0, 1.0, 1.0), shape="DISK")
+    add_area_light("GFX_Kicker", (3.0, -1.4, 4.4), (0.0, 0.0, 3.8), 55.0, 1.6,
+                   (1.0, 0.99, 0.97), shape="DISK")
 
 
 def _log_scene_diagnostics(scene: bpy.types.Scene, render_objects: list[bpy.types.Object]) -> None:

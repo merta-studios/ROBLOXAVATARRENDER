@@ -39,7 +39,7 @@ class RenderRegressionTests(unittest.TestCase):
             mat = _clone_rig_material(source, 'Head', texture_path=str(path))
         shader = next(n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
         self.assertFalse(shader.inputs['Roughness'].is_linked)
-        self.assertAlmostEqual(shader.inputs['Roughness'].default_value, GLOSS_ROUGHNESS)
+        self.assertAlmostEqual(shader.inputs["Roughness"].default_value, GLOSS_ROUGHNESS)
         self.assertAlmostEqual(shader.inputs['Coat Weight'].default_value, GLOSS_COAT_WEIGHT)
         self.assertAlmostEqual(
             shader.inputs['Coat Roughness'].default_value, GLOSS_COAT_ROUGHNESS
