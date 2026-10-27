@@ -2,7 +2,7 @@
 username = "MertaStudios"
 
 # Erlaubt: "transparent", Hex-Farbe #RGB oder #RRGGBB,
-# direkte http(s)-Bild-URL (max. 50 MB) oder lokaler Bildname in backgrounds/.
+# direkte http(s)-Bild-URL (max. 50 MB) oder lokaler Name als "Farbordner/Motiv", z. B. "lila/herzen-konfetti".
 # Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP.
 background = "transparent"
 

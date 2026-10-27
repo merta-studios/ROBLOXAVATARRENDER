@@ -133,17 +133,34 @@ def resolve_background(value: str, work_dir: Path) -> tuple[str, str | None]:
         except Exception as exc:
             raise ValueError(f"Hintergrund-URL konnte nicht als Bild geladen werden: {exc}") from exc
 
-    # Only files within backgrounds/ are selectable. Match filenames or stems, case-insensitively.
-    requested = Path(value).name.casefold()
-    matches = [
-        path for path in BACKGROUND_DIR.iterdir()
-        if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
-        and (path.name.casefold() == requested or path.stem.casefold() == requested)
-    ] if BACKGROUND_DIR.is_dir() else []
+    # Color folders are part of the selector (e.g. "blau/kristallsplitter").
+    # A bare design name remains accepted when it matches exactly one image.
+    requested = value.strip().replace("\\", "/").strip("/").casefold()
+    has_folder = "/" in requested
+    candidates = (
+        [p for p in BACKGROUND_DIR.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
+        if BACKGROUND_DIR.is_dir() else []
+    )
+    matches = []
+    for path in candidates:
+        relative = path.relative_to(BACKGROUND_DIR).as_posix().casefold()
+        relative_stem = relative[: -len(path.suffix)]
+        if has_folder:
+            if requested in {relative, relative_stem}:
+                matches.append(path)
+        elif requested in {path.name.casefold(), path.stem.casefold()}:
+            matches.append(path)
     if len(matches) == 1:
         return "image", str(matches[0])
     if len(matches) > 1:
-        raise ValueError(f"Der Hintergrundname '{value}' ist nicht eindeutig; nutze den Dateinamen mit Endung.")
-    available = sorted(p.stem for p in BACKGROUND_DIR.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS) if BACKGROUND_DIR.is_dir() else []
-    listing = ", ".join(available) if available else "(noch keine lokalen Bilddateien)"
-    raise ValueError(f"Lokaler Hintergrund '{value}' nicht gefunden. Verfügbare Hintergründe: {listing}.")
+        choices = ", ".join(sorted(
+            f"{p.parent.relative_to(BACKGROUND_DIR).as_posix()}/{p.stem}" for p in matches
+        ))
+        raise ValueError(f"Der Hintergrundname '{value}' ist mehrdeutig. Wähle Ordner/Name: {choices}.")
+    available = sorted(
+        f"{p.parent.relative_to(BACKGROUND_DIR).as_posix()}/{p.stem}" for p in candidates
+    )
+    listing = ", ".join(available[:12]) if available else "(noch keine lokalen Bilddateien)"
+    if len(available) > 12:
+        listing += f" und {len(available) - 12} weitere"
+    raise ValueError(f"Lokaler Hintergrund '{value}' nicht gefunden. Beispiele: {listing}.")

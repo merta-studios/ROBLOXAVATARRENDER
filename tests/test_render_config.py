@@ -77,6 +77,23 @@ class RenderConfigTests(unittest.TestCase):
         self.assertEqual(kind, "image")
         self.assertEqual(Path(path), image)
 
+    def test_resolves_color_folder_and_requires_folder_when_stems_repeat(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            backgrounds = root / "backgrounds"
+            blue = backgrounds / "blau"
+            red = backgrounds / "rot"
+            blue.mkdir(parents=True)
+            red.mkdir()
+            Image.new("RGB", (8, 8), "blue").save(blue / "same-design.png")
+            Image.new("RGB", (8, 8), "red").save(red / "same-design.png")
+            with patch("scripts.render_config.BACKGROUND_DIR", backgrounds):
+                kind, path = resolve_background("blau/same-design", root)
+                self.assertEqual(kind, "image")
+                self.assertEqual(Path(path), blue / "same-design.png")
+                with self.assertRaisesRegex(ValueError, "mehrdeutig"):
+                    resolve_background("same-design", root)
+
     def test_resolves_transparent_and_color_backgrounds_without_files(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
