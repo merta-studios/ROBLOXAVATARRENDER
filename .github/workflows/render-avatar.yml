@@ -19,7 +19,7 @@ on:
         required: false
         type: string
       gfx-type:
-        description: 'GFX-Typ: HearthandsType (Preppy Hearthands Type) oder ClassicType'
+        description: 'GFX-Typ: HearthandsType (Preppy Hearthands Type), ClassicType (R15) oder Both (beide)'
         required: false
         type: string
         default: 'HearthandsType'
@@ -71,7 +71,17 @@ jobs:
           # Render landen als avatar-<typ>.png im selben Tag.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             GFX_TYPE="${GFX_TYPE:-HearthandsType}"
-            GFX_TYPES="$GFX_TYPE"
+            case "$GFX_TYPE" in
+              Both|both|BOTH)
+                # Beide GFX-Typen rendern; "latest-render" zeigt weiterhin
+                # den primaeren Typ HearthandsType.
+                GFX_TYPES="ClassicType HearthandsType"
+                GFX_TYPE="HearthandsType"
+                ;;
+              *)
+                GFX_TYPES="$GFX_TYPE"
+                ;;
+            esac
           else
             CHANGED=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null || true)
             CLASSIC_CHANGED=0
