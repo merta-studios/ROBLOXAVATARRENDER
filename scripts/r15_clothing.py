@@ -201,16 +201,18 @@ def compose_r15_part_texture(
     pants_img: Image.Image | None,
     tshirt_img: Image.Image | None,
     face_img: Image.Image | None,
+    *,
+    transparent_base: bool = False,
 ) -> Image.Image:
     """Erzeugt die 384x256-Textur mit sechs Face-Tiles fuer ein R15-Teil."""
     color_key = PART_COLOR_KEYS[part_name]
     rgb = tuple(max(0, min(255, int(c))) for c in body_colors.get(color_key, (200, 200, 200)))
-    canvas = Image.new("RGB", (R15_ATLAS_W, R15_ATLAS_H), rgb)
+    canvas = Image.new("RGBA" if transparent_base else "RGB", (R15_ATLAS_W, R15_ATLAS_H), (*rgb, 0) if transparent_base else rgb)
     for face, (col, row) in FACE_TILE_POS.items():
-        tile = Image.new("RGBA", (R15_TILE, R15_TILE), (*rgb, 255))
+        tile = Image.new("RGBA", (R15_TILE, R15_TILE), (*rgb, 0 if transparent_base else 255))
         for layer in _face_layers(part_name, face, shirt_img, pants_img, tshirt_img, face_img):
             tile.alpha_composite(layer)
-        canvas.paste(tile.convert("RGB"), (col * R15_TILE, row * R15_TILE))
+        canvas.paste(tile if transparent_base else tile.convert("RGB"), (col * R15_TILE, row * R15_TILE))
     return canvas
 
 
@@ -221,6 +223,8 @@ def compose_r15_part_textures(
     tshirt_img: Image.Image | None,
     face_img: Image.Image | None,
     work_dir: Path,
+    *,
+    transparent_base: bool = False,
 ) -> dict[str, str]:
     """Schreibt alle 15 R15-Teiltexturen und liefert ``{Teilname: PNG-Pfad}``."""
     work_dir = Path(work_dir)
@@ -228,9 +232,10 @@ def compose_r15_part_textures(
     out: dict[str, str] = {}
     for part_name in EXPECTED_PARTS:
         image = compose_r15_part_texture(
-            part_name, body_colors, shirt_img, pants_img, tshirt_img, face_img
+            part_name, body_colors, shirt_img, pants_img, tshirt_img, face_img,
+            transparent_base=transparent_base,
         )
-        path = work_dir / f"r15_{part_name}.png"
+        path = work_dir / f"r15_{part_name}{'_overlay' if transparent_base else ''}.png"
         image.save(path, format="PNG", optimize=True)
         out[part_name] = str(path)
     return out
