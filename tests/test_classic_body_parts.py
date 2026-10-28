@@ -217,6 +217,37 @@ class ClassicBlenderBodyTests(unittest.TestCase):
         self.assertAlmostEqual(obj.location.y, 0.024, places=5)
         self.assertAlmostEqual(obj.location.z, 3.379, places=5)
 
+    def test_package_without_own_texture_uses_the_classic_body_texture(self):
+        """Klassische Pakete ohne eigene Textur bekommen die Koerpertextur."""
+        from scripts.classic_render import _create_inventory_part
+        from scripts.roblox_opencloud import BodyPartSpec
+
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        part_data = load_r15_blocky_rig()["UpperTorso"]
+        body = BodyPartSpec(1, 27, mesh(b"1"))
+        self.assertIsNone(body.texture_path)
+        with tempfile.TemporaryDirectory() as tmp:
+            texture = Path(tmp) / "classic_body.png"
+            Image.new("RGB", (8, 8), (30, 40, 50)).save(texture)
+            objects = []
+            obj = _create_inventory_part(
+                part_data, body, (1, 1, 1), "Matt", None, bpy.context.scene, objects,
+                classic_texture_path=str(texture),
+            )
+            images = [
+                node.image.name for node in obj.data.materials[0].node_tree.nodes
+                if node.type == "TEX_IMAGE"
+            ]
+            self.assertTrue(any("classic_body" in name for name in images))
+            # Die UVs zeigen auf den klassischen Body-Atlas (3x2-Tiles).
+            layer = obj.data.uv_layers["UVMap"]
+            for loop in obj.data.loops:
+                u, v = layer.data[loop.index].uv
+                self.assertGreaterEqual(u, 0.0)
+                self.assertLessEqual(u, 1.0)
+                self.assertGreaterEqual(v, 0.0)
+                self.assertLessEqual(v, 1.0)
+
     def test_alpha_modes_follow_roblox_semantics(self):
         """Overlay mischt die BodyColor, Transparency schneidet Loecher."""
         from scripts.classic_render import _solid_material

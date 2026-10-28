@@ -443,6 +443,7 @@ def _body_part_matrix_bl(cframe: tuple[float, ...]) -> Matrix:
 def _create_inventory_part(
     part: R15Part, body_part: Any, srgb: tuple[float, float, float],
     finish: str, clothing_path: str | None, scene: Any, render_objects: list[Any],
+    classic_texture_path: str | None = None,
 ) -> Any:
     # Der Mesh-Builder konvertiert bereits Roblox -> Blender. Eine zweite
     # Achsentransformation wuerde die Teile auf den Boden kippen.
@@ -450,9 +451,18 @@ def _create_inventory_part(
         f"{part.name}Mesh", body_part.mesh, body_part.mesh_scale, body_part.mesh_offset
     )
     _add_clothing_uv(mesh, part.name, part.color_key)
+    texture_path = body_part.texture_path
+    if not texture_path and classic_texture_path and Path(classic_texture_path).is_file():
+        # Klassisches Paket ohne eigene Textur (z. B. "Roblox 2.0"): Roblox
+        # zeigt dort die klassische Koerpertextur aus BodyColors und
+        # Classic-Kleidung. Die UVs des Assets passen nicht zu diesem Atlas,
+        # also werden die UVs neu berechnet: jede Flaeche des Meshs bekommt
+        # das Tile ihres Face (Front/Back/Left/Right/Top/Bottom).
+        texture_path = classic_texture_path
+        _remap_part_uvs(mesh, part)
     material = _solid_material(
         f"Classic{part.name}Mat", srgb, finish,
-        texture_path=body_part.texture_path,
+        texture_path=texture_path,
         tint_srgb=body_part.tint_color,
         alpha=1.0 - body_part.transparency,
         clothing_path=clothing_path,
@@ -467,6 +477,27 @@ def _create_inventory_part(
     obj.matrix_world = _body_part_matrix_bl(getattr(body_part, "cframe", IDENTITY_CFRAME))
     render_objects.append(obj)
     return obj
+
+
+def _remap_part_uvs(mesh: Any, part: R15Part) -> None:
+    """Berechnet die UVs eines Inventar-Meshs neu (klassischer Body-Atlas).
+
+    Jede Flaeche wird ueber ihre Normale als Front/Back/Left/Right/Top/Bottom
+    klassifiziert und auf das passende Tile des Atlas gemappt - genau so, wie
+    Roblox die klassischen Koerperteile auf die Koerpertextur legt.
+    """
+    proxy = R15Part(
+        name=part.name,
+        vertices=[tuple(v.co) for v in mesh.vertices],
+        faces=[tuple(p.vertices) for p in mesh.polygons],
+        uvs=[],
+        color_key=part.color_key,
+    )
+    uvs = compute_part_uvs(proxy)
+    layer = mesh.uv_layers.get("UVMap") or mesh.uv_layers.new(name="UVMap")
+    for loop in mesh.loops:
+        if loop.index < len(uvs):
+            layer.data[loop.index].uv = uvs[loop.index]
 
 
 def _create_r15_part(
@@ -735,7 +766,8 @@ def render_classic_scene(
         # BodyColors und Kleidung einrechnet. Ein zusaetzliches Projizieren
         # der Kleidung auf die UVs des Assets waere daher doppelt und falsch.
         body_objects[name] = _create_inventory_part(
-            part, body_part, srgb, material_finish, None, scene, render_objects
+            part, body_part, srgb, material_finish, None, scene, render_objects,
+            classic_texture_path=part_textures.get(name),
         )
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.
