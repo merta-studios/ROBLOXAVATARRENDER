@@ -227,12 +227,34 @@ def _build_empty_scene(res_x: int, res_y: int) -> tuple[Any, Any]:
     world.use_nodes = True
     tree = world.node_tree
     tree.nodes.clear()
+    
+    # Studio-Umgebung mit ColorRamp für glossy Reflexionen
+    tex_coord = tree.nodes.new("ShaderNodeTexCoord")
+    sep_xyz = tree.nodes.new("ShaderNodeSeparateXYZ")
+    ramp = tree.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.interpolation = "LINEAR"
+    stops: list[tuple[float, tuple[float, float, float, float]]] = [
+        (0.00, (0.020, 0.022, 0.028, 1.0)),  # unten: dunkler Boden
+        (0.38, (0.080, 0.090, 0.110, 1.0)),
+        (0.50, (0.520, 0.550, 0.620, 1.0)),  # Horizontkante = Reflexionslinie
+        (0.56, (0.180, 0.190, 0.215, 1.0)),
+        (1.00, (0.620, 0.650, 0.720, 1.0)),  # oben: heller Himmel/Softbox
+    ]
+    elements = ramp.color_ramp.elements
+    while len(elements) > 1:
+        elements.remove(elements[-1])
+    elements[0].position, elements[0].color = stops[0]
+    for pos, col in stops[1:]:
+        el = elements.new(pos)
+        el.color = col
+
     bg = tree.nodes.new("ShaderNodeBackground")
-    # Nicht sichtbar (film_transparent), liefert aber eine definierte Umgebung
-    # fuer die Reflexionen des Kunststoff-Materials.
-    bg.inputs["Color"].default_value = (0.08, 0.09, 0.11, 1.0)
-    bg.inputs["Strength"].default_value = 0.7
+    bg.inputs["Strength"].default_value = 0.75
     out = tree.nodes.new("ShaderNodeOutputWorld")
+
+    tree.links.new(tex_coord.outputs["Generated"], sep_xyz.inputs["Vector"])
+    tree.links.new(sep_xyz.outputs["Z"], ramp.inputs["Fac"])
+    tree.links.new(ramp.outputs["Color"], bg.inputs["Color"])
     tree.links.new(bg.outputs["Background"], out.inputs["Surface"])
 
     cam_data = bpy.data.cameras.new("ClassicCamera")
@@ -243,25 +265,11 @@ def _build_empty_scene(res_x: int, res_y: int) -> tuple[Any, Any]:
     cam_data.clip_end = 1000.0
     cam = bpy.data.objects.new("ClassicCamera", cam_data)
     scene.collection.objects.link(cam)
-    cam.location = Vector((0.0, -CAMERA_DISTANCE, 2.7))
-    cam.rotation_euler = (Vector((0.0, 0.0, 2.7)) - cam.location).to_track_quat("-Z", "Y").to_euler()
+    # Kamera-Initialposition: wird später dynamisch angepasst
+    cam.location = Vector((0.0, -CAMERA_DISTANCE, 0.0))
+    cam.rotation_euler = (math.pi / 2, 0.0, 0.0)
     scene.camera = cam
 
-    # Drei weiche Studio-Leuchten, alle auf den Avatar-Mittelpunkt gerichtet.
-    def add_light(name: str, loc: tuple[float, float, float], energy: float, size: float) -> None:
-        ldata = bpy.data.lights.new(name=name, type="AREA")
-        ldata.energy = energy
-        ldata.size = size
-        ldata.shape = "DISK"
-        lobj = bpy.data.objects.new(name=name, object_data=ldata)
-        scene.collection.objects.link(lobj)
-        lobj.location = Vector(loc)
-        target = Vector((0.0, 0.0, 2.7))
-        lobj.rotation_euler = (target - lobj.location).to_track_quat("-Z", "Y").to_euler()
-
-    add_light("ClassicKeyLight", (-3.0, -4.5, 6.2), 260.0, 4.0)
-    add_light("ClassicFillLight", (3.4, -4.0, 4.0), 180.0, 4.2)
-    add_light("ClassicRimLight", (1.2, 4.0, 6.0), 200.0, 3.2)
     return scene, cam
 
 
@@ -560,9 +568,16 @@ def render_classic_scene(
     #    Fehlende Koerperteil-Assets aus dem Inventar werden so exakt durch
     #    Roblox' Standardteile ersetzt, nicht durch einfache Quader. Jedes Teil
     #    hat seine eigene 3x2-Textur mit Shirt/Pants/T-Shirt bzw. Face-Decal.
+    #    Bei headless (bundle.head.kind == "headless") wird der Kopf nicht gerendert.
     official_parts = load_r15_blocky_rig()
     part_textures = getattr(bundle, "r15_part_textures", {}) or {}
+    is_headless = getattr(bundle.head, "kind", "") == "headless"
+    
     for name, part in official_parts.items():
+        # Headless: keinen Kopf rendern
+        if name == "Head" and is_headless:
+            continue
+            
         rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
         srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
         texture_path = part_textures.get(name)
@@ -697,6 +712,28 @@ def render_classic_scene(
         f"Rand oben={margin_top_world:.3f} ({margin_top_world/final_height*100:.1f}%), "
         f"Rand unten={margin_bottom_world:.3f} ({margin_bottom_world/final_height*100:.1f}%) Welt-Einheiten."
     )
+
+    # 4b. Studio-Lichter dynamisch auf den Avatar-Mittelpunkt ausrichten
+    avatar_center = Vector(tuple(float(v) for v in final_center))
+    def add_area_light(name: str, loc: tuple[float, float, float], energy: float, size: float) -> None:
+        ldata = bpy.data.lights.new(name=name, type="AREA")
+        ldata.energy = energy
+        ldata.size = size
+        ldata.shape = "DISK"
+        lobj = bpy.data.objects.new(name=name, object_data=ldata)
+        scene.collection.objects.link(lobj)
+        # Licht-Position relativ zum Avatar-Mittelpunkt
+        lobj.location = Vector((
+            float(final_center[0]) + loc[0],
+            float(final_center[1]) + loc[1],
+            float(final_center[2]) + loc[2],
+        ))
+        direction = avatar_center - lobj.location
+        lobj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
+    add_area_light("ClassicKeyLight", (-3.0, -4.5, 3.5), 260.0, 4.0)
+    add_area_light("ClassicFillLight", (3.4, -4.0, 1.3), 180.0, 4.2)
+    add_area_light("ClassicRimLight", (1.2, 4.0, 3.3), 200.0, 3.2)
 
     # 5. Immer transparent rendern. Hintergrund und Umrandung sind reine
     #    PNG-Nachbearbeitung und benoetigen keine zweite Szene / Blend-Datei.
