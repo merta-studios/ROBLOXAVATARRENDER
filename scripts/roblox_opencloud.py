@@ -973,10 +973,15 @@ def load_avatar_bundle(
                                 texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
                                 timg.save(texture_path, format="PNG")
                         
-                        # Base color
+                        # Base color (Color3uint8 ist 0-255, muss zu 0-1 konvertiert werden)
                         col_raw = mesh_part.prop("Color", "Color3uint8")
                         if isinstance(col_raw, tuple) and len(col_raw) == 3:
-                            base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
+                            # Prüfe ob die Werte im 0-255 Bereich sind
+                            if all(0 <= v <= 255 for v in col_raw):
+                                base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
+                            else:
+                                # Werte sind bereits 0-1
+                                base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
                 
                 elif special_mesh is not None:
                     mid = extract_asset_id(special_mesh.prop("MeshId", "MeshContent"))
@@ -992,6 +997,16 @@ def load_avatar_bundle(
                             timg = client.fetch_image(tex_id)
                             texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
                             timg.save(texture_path, format="PNG")
+                        
+                        # Base color für SpecialMesh (aus parent Handle oder Part)
+                        parent_node = next((n for n in all_nodes if n.class_name in ("Part", "MeshPart")), None)
+                        if parent_node is not None:
+                            col_raw = parent_node.prop("Color", "Color3uint8")
+                            if isinstance(col_raw, tuple) and len(col_raw) == 3:
+                                if all(0 <= v <= 255 for v in col_raw):
+                                    base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
+                                else:
+                                    base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
                 
                 if mesh_data is None:
                     continue
