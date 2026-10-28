@@ -11,3 +11,6 @@ venv/
 /build/
 /dist/
 .DS_Store
+
+# Recherche-Bilder (nicht Teil des Repos)
+image-search/
