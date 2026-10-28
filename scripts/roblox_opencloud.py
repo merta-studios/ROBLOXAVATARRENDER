@@ -972,6 +972,13 @@ def load_avatar_bundle(
                                 timg = client.fetch_image(tex_id)
                                 texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
                                 timg.save(texture_path, format="PNG")
+                        else:
+                            # Fallback: TextureID direkt auf dem MeshPart
+                            tex_id = extract_asset_id(mesh_part.prop("TextureID", "TextureId", "TextureContent"))
+                            if tex_id:
+                                timg = client.fetch_image(tex_id)
+                                texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
+                                timg.save(texture_path, format="PNG")
                         
                         # Base color (Color3uint8 ist 0-255, muss zu 0-1 konvertiert werden)
                         col_raw = mesh_part.prop("Color", "Color3uint8")

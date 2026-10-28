@@ -615,6 +615,14 @@ def render_classic_scene(
         if use_inventory_mesh:
             # Inventar-Mesh verwenden
             body_part = body_parts[inventory_asset_type]
+            
+            # WICHTIG: Ein R15-Body-Part-Asset enthält bereits alle Teile als ein Mesh.
+            # Render es nur einmal (für den ersten Teil-Namen), nicht für jeden Teil separat.
+            part_names = ASSET_TYPE_TO_PART_NAMES[inventory_asset_type]
+            if name != part_names[0]:
+                # Dies ist nicht der erste Teil - überspringe (wurde bereits gerendert)
+                continue
+            
             mesh_data = body_part.mesh
             
             # Scaling anwenden
@@ -633,7 +641,7 @@ def render_classic_scene(
             
             # Mesh erstellen
             mesh = _build_blender_mesh_from_rbx(
-                f"{name}Mesh",
+                f"{inventory_asset_type}Mesh",
                 mesh_data,
                 eff_scale,
                 body_part.mesh_offset,
@@ -641,7 +649,7 @@ def render_classic_scene(
             
             # Material
             material = _solid_material(
-                f"Classic{name}Mat",
+                f"Classic{inventory_asset_type}Mat",
                 body_part.base_color,
                 material_finish,
                 texture_path=body_part.texture_path,
@@ -650,7 +658,7 @@ def render_classic_scene(
             )
             mesh.materials.append(material)
             
-            obj = bpy.data.objects.new(name, mesh)
+            obj = bpy.data.objects.new(f"BodyPart_{inventory_asset_type}", mesh)
             scene.collection.objects.link(obj)
             
             # CFrame-Transformation anwenden (Position und Rotation aus dem Inventar)
@@ -659,7 +667,9 @@ def render_classic_scene(
             obj.matrix_world = Matrix(blender_matrix.tolist())
             
             render_objects.append(obj)
-            body_objects[name] = obj
+            # Speichere das Objekt für alle Teil-Namen dieses Asset-Typs
+            for part_name in part_names:
+                body_objects[part_name] = obj
         else:
             # Blocky rig als Fallback verwenden
             rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
