@@ -972,6 +972,7 @@ def load_avatar_bundle(
                                 timg = client.fetch_image(tex_id)
                                 texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
                                 timg.save(texture_path, format="PNG")
+                                print(f"[body_part] Textur aus SurfaceAppearance geladen für Asset {aid}: {tex_id}")
                         else:
                             # Fallback: TextureID direkt auf dem MeshPart
                             tex_id = extract_asset_id(mesh_part.prop("TextureID", "TextureId", "TextureContent"))
@@ -979,6 +980,9 @@ def load_avatar_bundle(
                                 timg = client.fetch_image(tex_id)
                                 texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
                                 timg.save(texture_path, format="PNG")
+                                print(f"[body_part] Textur aus TextureID geladen für Asset {aid}: {tex_id}")
+                            else:
+                                print(f"[body_part] KEINE Textur gefunden für Asset {aid}")
                         
                         # Base color (Color3uint8 ist 0-255, muss zu 0-1 konvertiert werden)
                         col_raw = mesh_part.prop("Color", "Color3uint8")
@@ -1025,7 +1029,10 @@ def load_avatar_bundle(
                     cf = node.prop("CFrame")
                     if cf and len(cf) == 12:
                         cframe = tuple(float(x) for x in cf)
+                        print(f"[body_part] CFrame gefunden für Asset {aid}: {cframe[:3]}...")
                         break
+                else:
+                    print(f"[body_part] KEINE CFrame gefunden für Asset {aid}, verwende IDENTITY")
                 
                 body_parts[atype_id] = BodyPartSpec(
                     asset_id=aid,
