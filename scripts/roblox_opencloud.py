@@ -15,6 +15,7 @@ import requests
 import zstandard
 from PIL import Image, ImageDraw
 
+from scripts import _diag_probe  # TEMPORAERE DIAGNOSE
 from scripts.brick_colors import brick_color_to_rgb, hex_to_rgb
 from scripts.r15_blocky_rig import BODY_PART_ASSET_TYPES, R15_FIXED_ATTACHMENT_POSITIONS
 from scripts.r15_clothing import (
@@ -904,6 +905,7 @@ def _load_r15_body_segments(
             mesh = parse_rbx_mesh(client.fetch_asset_bytes(mid))
             if not mesh.positions or not mesh.faces:
                 continue
+            _diag_probe.probe_mesh_faces(mesh, f"{asset_id}:{name}")  # TEMPORAERE DIAGNOSE
             scale = _compute_meshpart_scale(node, mesh) if sm is None else tuple(float(v) for v in sm.prop("Scale", default=(1, 1, 1)))
             offset = (0.0, 0.0, 0.0) if sm is None else tuple(float(v) for v in sm.prop("Offset", default=(0, 0, 0)))
             sa = node.find_first_child_of_class("SurfaceAppearance")
@@ -1003,6 +1005,10 @@ def load_avatar_bundle(
     shirt_img = client.fetch_image(int(by_type[11][0]["id"])) if by_type.get(11) else None
     pants_img = client.fetch_image(int(by_type[12][0]["id"])) if by_type.get(12) else None
     tshirt_img = client.fetch_image(int(by_type[2][0]["id"])) if by_type.get(2) else None
+    # TEMPORAERE DIAGNOSE
+    _diag_probe.probe_template(shirt_img, "shirt")
+    _diag_probe.probe_template(pants_img, "pants")
+    _diag_probe.probe_template(tshirt_img, "tshirt")
 
     body_tex = compose_r6_body_texture(body_colors, shirt_img, pants_img, tshirt_img, scale=2)
     body_tex_path = str(work_dir / "r6_body_texture.png")
@@ -1020,6 +1026,7 @@ def load_avatar_bundle(
 
     face_tex_path = str(work_dir / "face_texture.png")
     face_img.save(face_tex_path, format="PNG")
+    _diag_probe.probe_template(face_img, "face")  # TEMPORAERE DIAGNOSE
     alpha_info = "kein Alpha"
     if face_img.mode in ("RGBA", "LA", "PA"):
         a_min, a_max = face_img.getchannel("A").getextrema()
@@ -1040,6 +1047,9 @@ def load_avatar_bundle(
         r15_part_textures = compose_r15_part_textures(
             body_colors, shirt_img, pants_img, tshirt_img, face_img, work_dir
         )
+        # TEMPORAERE DIAGNOSE
+        for probe_part in ("UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand"):
+            _diag_probe.probe_file(r15_part_textures.get(probe_part), f"part.{probe_part}")
         print(f"[classic clothing] {len(r15_part_textures)} R15-Teiltexturen erzeugt.")
 
     # 3. Kopf laden (Classic Head, Custom SpecialMesh Head, Headless oder DynamicHead)
