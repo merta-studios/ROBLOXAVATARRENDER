@@ -46,23 +46,5 @@ rotation_deg = 30
 abstand_oben = 4
 abstand_unten = 10
 
-# WICHTIG: Alle oben stehenden ClassicType-Optionen gehören auf die oberste
-# TOML-Ebene. Alles unter [outline] ist ausschließlich die Umrandung.
-[outline]
-# Dicke in Prozent der Bildbreite (Dezimalzahlen erlaubt, 0 bis 100).
-# Bei 2000 px Bildbreite ist 1 = 20 px. 0 deaktiviert die Umrandung.
-thickness_percent = 0.3
-
-# true = Umrandung nach außen vom Avatar weg; false = nach innen auf den Avatar.
-outside = false
-
-# Punkt, ab dem die Umrandung ausblendet (0 bis 100 Prozent der Umrandungsdicke).
-# 0 = Fade über die ganze Dicke; 50 = erste Hälfte deckend, danach Fade;
-# 100 = die gesamte Umrandung bleibt deckend.
-fade_start_percent = 100
-
-# Erlaubt: Hex-Farbe #RGB oder #RRGGBB, außerdem "white" oder "black".
-color = "white"
-
 # Render-Hinweis: Dieser GFX-Typ wird mit einer eigenen leeren Szene
 # (scripts/classic_render.py) und ohne R6-Blend-Datei gerendert.

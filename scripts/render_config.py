@@ -26,12 +26,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # blendet Kopf und Gesicht-Accessoires für den Headless-Look aus.
     "korblox": False,
     "headless": False,
-    "outline": {
-        "thickness_percent": 0,
-        "outside": True,
-        "fade_start_percent": 0,
-        "color": "white",
-    },
 }
 
 # GFX-Typen, für die es einen eigenen Konfigurationsordner gibt.
@@ -56,10 +50,6 @@ def read_config(path: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("Die Konfiguration muss ein TOML-Objekt sein.")
     config = {**DEFAULT_CONFIG, **parsed}
-    outline = parsed.get("outline", {})
-    if not isinstance(outline, dict):
-        raise ValueError("'outline' muss ein TOML-Abschnitt mit Schlüssel-Wert-Paaren sein.")
-    config["outline"] = {**DEFAULT_CONFIG["outline"], **outline}
 
     username = str(config["username"]).strip().lstrip("@").strip()
     if not username:
@@ -84,23 +74,6 @@ def read_config(path: Path) -> dict[str, Any]:
         config["background"] = bg
     else:
         config["background"] = bg
-
-    outline_cfg = config["outline"]
-    try:
-        thickness = float(outline_cfg["thickness_percent"])
-        fade = float(outline_cfg["fade_start_percent"])
-    except (TypeError, ValueError, KeyError) as exc:
-        raise ValueError("Umrandungsdicke und Transparenzstart müssen Zahlen sein.") from exc
-    if not 0 <= thickness <= 100:
-        raise ValueError("'thickness_percent' muss zwischen 0 und 100 liegen.")
-    if not 0 <= fade <= 100:
-        raise ValueError("'fade_start_percent' muss zwischen 0 und 100 liegen.")
-    if not isinstance(outline_cfg["outside"], bool):
-        raise ValueError("'outline.outside' muss true oder false sein.")
-    outline_cfg["thickness_percent"] = thickness
-    outline_cfg["fade_start_percent"] = fade
-    outline_color = str(outline_cfg["color"]).strip()
-    normalize_color(outline_color)  # sofort prüfen; den editierbaren TOML-String beibehalten
 
     for bool_key in ("korblox", "headless"):
         if not isinstance(config[bool_key], bool):
@@ -154,37 +127,6 @@ def read_classic_config(path: Path) -> dict[str, Any]:
         config["background"] = bg
     else:
         config["background"] = bg
-
-    outline = parsed.get("outline", {})
-    if not isinstance(outline, dict):
-        raise ValueError("'outline' muss ein TOML-Abschnitt mit Schlüssel-Wert-Paaren sein.")
-    # ClassicType-Optionen hinter [outline] wären TOML-Unterschlüssel und damit
-    # wirkungslos. Das lieber laut ablehnen, statt still auf Defaults zu fallen.
-    misplaced = [
-        key for key in ("pose", "emote_asset_id", "rotation_deg", "abstand_oben", "abstand_unten")
-        if key in outline
-    ]
-    if misplaced:
-        raise ValueError(
-            f"{', '.join(misplaced)} müssen vor '[outline]' auf der obersten TOML-Ebene stehen."
-        )
-    config["outline"] = {**DEFAULT_CONFIG["outline"], **outline}
-    outline_cfg = config["outline"]
-    try:
-        thickness = float(outline_cfg["thickness_percent"])
-        fade = float(outline_cfg["fade_start_percent"])
-    except (TypeError, ValueError, KeyError) as exc:
-        raise ValueError("Umrandungsdicke und Transparenzstart müssen Zahlen sein.") from exc
-    if not 0 <= thickness <= 100:
-        raise ValueError("'thickness_percent' muss zwischen 0 und 100 liegen.")
-    if not 0 <= fade <= 100:
-        raise ValueError("'fade_start_percent' muss zwischen 0 und 100 liegen.")
-    if not isinstance(outline_cfg["outside"], bool):
-        raise ValueError("'outline.outside' muss true oder false sein.")
-    outline_cfg["thickness_percent"] = thickness
-    outline_cfg["fade_start_percent"] = fade
-    outline_color = str(outline_cfg["color"]).strip()
-    normalize_color(outline_color)
 
     pose = str(config.get("pose", "None")).strip()
     if pose not in CLASSIC_POSES:

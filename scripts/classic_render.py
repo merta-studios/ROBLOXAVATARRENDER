@@ -39,7 +39,7 @@ except ImportError:  # pragma: no cover - lokal ohne Blender-Systembibliotheken
     Matrix = Vector = None  # type: ignore[assignment]
 
 from scripts.gfx_layout import compute_spacing_transform
-from scripts.image_compositing import apply_avatar_outline, compose_background
+from scripts.image_compositing import compose_background
 from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig
 from scripts.r15_clothing import compute_part_uvs
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
@@ -533,7 +533,6 @@ def render_classic_scene(
     background_kind: str = "transparent",
     background_path: str | None = None,
     background_value: str = "transparent",
-    outline: dict | None = None,
     classic_pose: str = "None",
     classic_emote: Any = None,
     classic_rotation_deg: float = 0.0,
@@ -670,6 +669,10 @@ def render_classic_scene(
     final_lo, final_hi = final_bbox
     final_center = (final_lo + final_hi) / 2.0
     final_height = float(final_hi[2] - final_lo[2])
+    
+    # Kamera-Z so positionieren, dass oben abstand_oben% und unten abstand_unten% Platz ist
+    # margin_world = abstand_oben% der skalierten Avatar-Höhe
+    # Kamera-Zentrum = Avatar-Top + margin_top - ortho/2
     camera_z = (
         final_center[2]
         + final_height / 2.0
@@ -679,14 +682,20 @@ def render_classic_scene(
     camera.location = Vector(
         (float(final_center[0]), float(final_center[1]) - CAMERA_DISTANCE, float(camera_z))
     )
-    target = Vector(tuple(float(v) for v in final_center))
+    # Kamera schaut geradeaus (nicht geneigt), damit die Ortho-Projektion korrekt ist
+    target = Vector((float(final_center[0]), float(final_center[1]) - CAMERA_DISTANCE + 1, float(camera_z)))
     camera.rotation_euler = (target - camera.location).to_track_quat("-Z", "Y").to_euler()
     camera.data.ortho_scale = ORTHO_SCALE
     camera.data.sensor_fit = "VERTICAL"
+    
+    # Berechne tatsächliche Ränder für die Diagnose
+    margin_top_world = margin_world
+    margin_bottom_world = ORTHO_SCALE - final_height - margin_world
     print(
         f"[classic] {len(render_objects)} Objekte ({accessory_count} Accessoires), "
         f"Hoehe={avatar_height:.3f} -> {final_height:.3f}, Drehung={classic_rotation_deg:.1f} deg, "
-        f"Rand oben={margin_world:.3f} Welt-Einheiten."
+        f"Rand oben={margin_top_world:.3f} ({margin_top_world/final_height*100:.1f}%), "
+        f"Rand unten={margin_bottom_world:.3f} ({margin_bottom_world/final_height*100:.1f}%) Welt-Einheiten."
     )
 
     # 5. Immer transparent rendern. Hintergrund und Umrandung sind reine
@@ -706,18 +715,6 @@ def render_classic_scene(
         image_path=background_path,
         value=background_value,
     )
-
-    outline_cfg = outline or {}
-    thickness = float(outline_cfg.get("thickness_percent", 0))
-    if thickness > 0:
-        apply_avatar_outline(
-            output_png,
-            avatar_png,
-            thickness_percent=thickness,
-            outside=bool(outline_cfg.get("outside", True)),
-            fade_start_percent=float(outline_cfg.get("fade_start_percent", 0)),
-            color=normalize_color(str(outline_cfg.get("color", "white"))),
-        )
 
     if not output_png.is_file() or output_png.stat().st_size == 0:
         raise RuntimeError(f"ClassicType hat keine Ausgabedatei unter '{output_png}' erzeugt.")

@@ -45,21 +45,15 @@ class RenderConfigTests(unittest.TestCase):
             path = self.write_config(Path(temp), {
                 "username": "@ExampleUser",
                 "material": "matt",
-                "outline": {"thickness_percent": 1.25, "outside": False,
-                            "fade_start_percent": 50, "color": "#abc"},
             })
             config = read_config(path)
         self.assertEqual(config["username"], "ExampleUser")
         self.assertEqual(config["background"], "transparent")
         self.assertEqual(config["material"], "Matt")
-        self.assertEqual(config["outline"]["thickness_percent"], 1.25)
-        self.assertEqual(config["outline"]["color"], "#abc")
 
-    def test_validates_material_and_outline_percentages(self):
+    def test_validates_material_percentage(self):
         for override, expected in [
             ({"material": "Satin"}, "genau 'Glossy' oder 'Matt'"),
-            ({"outline": {"thickness_percent": 101}}, "zwischen 0 und 100"),
-            ({"outline": {"fade_start_percent": -1}}, "zwischen 0 und 100"),
         ]:
             with self.subTest(override=override), tempfile.TemporaryDirectory() as temp:
                 data = {"username": "User", **override}
@@ -107,7 +101,7 @@ class RenderConfigTests(unittest.TestCase):
         self.assertEqual(Path(path), Path("backgrounds/rot/sternnebel.png").resolve())
 
     def test_resolves_transparent_and_color_backgrounds_without_files(self):
-        from scripts.image_compositing import apply_avatar_outline, compose_background
+        from scripts.image_compositing import compose_background
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -124,7 +118,7 @@ class RenderConfigTests(unittest.TestCase):
                 self.assertEqual(image.mode, "RGBA")
                 self.assertEqual(image.convert("RGBA").getpixel((1, 1)), (18, 171, 239, 255))
 
-            # Bild-Hintergrund + gemeinsame Umrandung funktionieren auch ohne bpy.
+            # Bild-Hintergrund funktioniert auch ohne bpy.
             bg = root / "bg.png"
             Image.new("RGBA", (8, 8), (10, 20, 30, 255)).save(bg)
             avatar8 = root / "avatar8.png"
@@ -133,52 +127,10 @@ class RenderConfigTests(unittest.TestCase):
             square.save(avatar8)
             composed = root / "composed.png"
             compose_background(avatar8, composed, kind="image", image_path=str(bg), value="image")
-            apply_avatar_outline(
-                composed, avatar8, thickness_percent=25,
-                outside=True, fade_start_percent=100, color=(255, 255, 255),
-            )
             with Image.open(composed) as image:
                 rgba = image.convert("RGBA")
                 self.assertEqual(rgba.getpixel((0, 0))[:3], (10, 20, 30))
-                self.assertEqual(rgba.getpixel((2, 3))[:3], (255, 255, 255))
                 self.assertEqual(rgba.getpixel((3, 3))[:3], (200, 30, 40))
-
-    def test_outline_is_not_pinned_to_canvas_edge(self):
-        """Bei clippendem Avatar darf die Outline nicht als Randlinie kleben."""
-        from scripts.image_compositing import apply_avatar_outline
-
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            # 1. Avatar bedeckt den ganzen Canvas (geht ueber alle Raender
-            # hinaus). Es gibt keine sichtbare Kante -> keine Outline.
-            full_avatar = root / "full.png"
-            full_out = root / "full_out.png"
-            Image.new("RGBA", (12, 12), (200, 30, 40, 255)).save(full_avatar)
-            Image.new("RGBA", (12, 12), (0, 0, 0, 0)).save(full_out)
-            apply_avatar_outline(
-                full_out, full_avatar, thickness_percent=25,
-                outside=False, fade_start_percent=100, color=(255, 255, 255),
-            )
-            with Image.open(full_out) as image:
-                self.assertEqual(image.convert("RGBA").getchannel("A").getextrema(), (0, 0))
-
-            # 2. Avatar geht ueber den Rand, hat aber ein Loch im Inneren.
-            # Die Outline folgt dem Loch, nicht dem Canvas-Rand.
-            holed = Image.new("RGBA", (12, 12), (200, 30, 40, 255))
-            ImageDraw.Draw(holed).rectangle((5, 5, 6, 6), fill=(0, 0, 0, 0))
-            holed_avatar = root / "holed.png"
-            holed_out = root / "holed_out.png"
-            holed.save(holed_avatar)
-            Image.new("RGBA", (12, 12), (0, 0, 0, 0)).save(holed_out)
-            apply_avatar_outline(
-                holed_out, holed_avatar, thickness_percent=10,
-                outside=False, fade_start_percent=100, color=(255, 255, 255),
-            )
-            with Image.open(holed_out) as image:
-                rgba = image.convert("RGBA")
-                self.assertGreater(rgba.getpixel((4, 5))[3], 0)
-                self.assertEqual(rgba.getpixel((0, 0))[3], 0)
-                self.assertEqual(rgba.getpixel((0, 6))[3], 0)
 
     def test_korblox_and_headless_default_to_false(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -217,7 +169,6 @@ class RenderConfigTests(unittest.TestCase):
                 "rotation_deg": 45,
                 "abstand_oben": 10,
                 "abstand_unten": -10,
-                "outline": {"thickness_percent": 1.0, "outside": True, "fade_start_percent": 50, "color": "black"},
             })
             config = read_classic_config(path)
         self.assertEqual(config["username"], "ClassicUser")
@@ -228,7 +179,6 @@ class RenderConfigTests(unittest.TestCase):
         self.assertEqual(config["rotation_deg"], 45.0)
         self.assertEqual(config["abstand_oben"], 10.0)
         self.assertEqual(config["abstand_unten"], -10.0)
-        self.assertEqual(config["outline"]["color"], "black")
         self.assertFalse(config["korblox"])
         self.assertFalse(config["headless"])
 
@@ -295,15 +245,6 @@ class RenderConfigTests(unittest.TestCase):
                 path = self.write_config(Path(temp), data)
                 with self.assertRaisesRegex(ValueError, expected):
                     read_classic_config(path)
-
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "configs.toml"
-            path.write_text(
-                'username = "User"\n[outline]\npose = "Emote"\nrotation_deg = 30\n',
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "vor '\\[outline\\]'"):
-                read_classic_config(path)
 
     def test_gfx_type_from_config_path(self):
         self.assertEqual(gfx_type_from_config_path(Path("HearthandsType/configs.toml"), None), "HearthandsType")
