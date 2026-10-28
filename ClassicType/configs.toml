@@ -31,10 +31,10 @@ material = "Glossy"
 #   "Emote"     - Pose aus einem Emote (Animation) nach emote_asset_id,
 #                 eingefroren am Moment, der auch in der Emote-Vorschau zu sehen ist
 #                 (wird per Roblox Open Cloud API abgerufen, nicht geraten)
-pose = "Equipped"
+pose = "Emote"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
-emote_asset_id = 0
+emote_asset_id = 132679422049257
 
 # Drehung des Avatars in Grad um die vertikale Achse:
 # 0 = schaut zur Mitte, 45 = schräg nach rechts, -45 = schräg nach links.
