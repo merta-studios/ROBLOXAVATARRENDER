@@ -16,7 +16,7 @@ import zstandard
 from PIL import Image, ImageDraw
 
 from scripts.brick_colors import brick_color_to_rgb, hex_to_rgb
-from scripts.r15_blocky_rig import BODY_PART_ASSET_TYPES
+from scripts.r15_blocky_rig import BODY_PART_ASSET_TYPES, R15_FIXED_ATTACHMENT_POSITIONS
 from scripts.r15_clothing import (
     CLOTHING_RECTS,
     compose_r15_part_textures,
@@ -27,12 +27,18 @@ from scripts.rbx_formats import (
     MeshData,
     RbxNode,
     ZSTD_MAGIC,
+    compose_cframes,
+    cframe_position,
     extract_asset_id,
     parse_rbx_mesh,
     parse_rbx_model,
+    translate_cframe,
 )
 
 DEFAULT_SMILE_ASSET_ID = 144075659
+
+# Roblox Enum.AlphaMode (siehe create.roblox.com/docs/reference/engine/enums/AlphaMode)
+ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmask", 3: "opaque"}
 
 # --- TEMPORAERE DIAGNOSE (wird nach der Analyse wieder entfernt) -------------
 _DIAGNOSTICS: dict[str, Any] = {"textures": {}, "assets": []}
@@ -142,6 +148,8 @@ class BodyPartSpec:
     base_color: tuple[float, float, float] = (0.8, 0.8, 0.8)
     texture_path: str | None = None
     tint_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    # Roblox Enum.AlphaMode: overlay | transparency | tintmask | opaque
+    alpha_mode: str = "overlay"
 
 
 @dataclass
@@ -839,11 +847,93 @@ def _compute_meshpart_scale(node: RbxNode, mesh: MeshData) -> tuple[float, float
     return (sx, sy, sz)
 
 
+def _absolute_cframe(node: RbxNode) -> tuple[float, ...]:
+    """CFrame eines Knotens relativ zur Wurzel des Assets.
+
+    Roblox-CFrames eines Parts sind relativ zum Elternteil. Fuer Koerperteil-
+    Assets liegen die Parts in einem Ordner ("R15Fixed"/"R15ArtistIntent"),
+    dessen Transform die Wurzel des Assets bildet.
+    """
+    chain: list[RbxNode] = []
+    current: RbxNode | None = node
+    while current is not None:
+        chain.append(current)
+        current = current.parent
+    cframe: tuple[float, ...] = IDENTITY_CFRAME
+    for item in reversed(chain):
+        cframe = compose_cframes(cframe, item.prop("CFrame", default=IDENTITY_CFRAME))
+    return cframe
+
+
+def _rig_alignment_offset(nodes: list[RbxNode]) -> tuple[float, float, float]:
+    """Berechnet den Versatz eines Assets zum offiziellen R15Fixed-Rig.
+
+    Roblox haengt ein Koerperteil-Asset ueber dessen Rig-Attachments ein:
+    die "Rig"-Attachments eines Assets muessen auf den Positionen der
+    offiziellen ``R15FixedRigAttachmentMap`` landen (Roblox-Client-Plugin
+    "AssetImporter"). Viele Assets (z. B. aus R6 konvertierte Pakete) liegen
+    dabei um einen festen Betrag versetzt - die Teile sassen dann sichtbar
+    neben dem Avatar. Der Versatz wird als Median ueber alle passenden
+    Attachments bestimmt, damit ein einzelnes abweichendes Attachment den
+    Versatz nicht verschiebt.
+    """
+    deltas: list[tuple[float, float, float]] = []
+    for node in nodes:
+        part_cframe = _absolute_cframe(node)
+        for attachment in node.children:
+            if attachment.class_name != "Attachment":
+                continue
+            target = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment.name)
+            if target is None:
+                continue
+            position = cframe_position(
+                compose_cframes(part_cframe, attachment.prop("CFrame", default=IDENTITY_CFRAME))
+            )
+            deltas.append((target[0] - position[0], target[1] - position[1], target[2] - position[2]))
+    if not deltas:
+        return (0.0, 0.0, 0.0)
+    offset = []
+    for axis in range(3):
+        values = sorted(delta[axis] for delta in deltas)
+        offset.append(float(values[len(values) // 2]))
+    return (offset[0], offset[1], offset[2])
+
+
+def _character_mesh_texture(roots: list[RbxNode]) -> int | None:
+    """Textur eines klassischen CharacterMesh im Asset (R6-Ordner).
+
+    Klassische Koerperteil-Pakete (z. B. "Roblox 2.0") tragen ihre Textur
+    nicht am MeshPart, sondern am CharacterMesh des Assets. Ohne diese Textur
+    fallen die Teile auf die flache BodyColor zurueck und wirken braun.
+    """
+    for root in roots:
+        for node in [root] + root.descendants():
+            if node.class_name != "CharacterMesh":
+                continue
+            texture_id = extract_asset_id(
+                node.prop("BaseTextureId", "OverrideTextureId", "TextureId", "TextureID")
+            )
+            if texture_id:
+                return texture_id
+    return None
+
+
 def _load_r15_body_segments(
     client: Any, roots: list[RbxNode], asset_id: int, asset_type_id: int,
     names: tuple[str, ...], work_dir: Path,
 ) -> dict[str, BodyPartSpec]:
-    """Laedt benannte R15-Segmente, bevorzugt ArtistIntent vor Fixed und nie R6."""
+    """Laedt benannte R15-Segmente aus einem Koerperteil-Asset.
+
+    Quellen-Prioritaet: "R15Fixed" (der kanonische Roblox-Rig-Stand) vor
+    "R15ArtistIntent" (die vom Kuenstler gewaehlte Pose). "R6" (klassisch)
+    und "R15" (Studio-Vorschau, 2 Studs zu hoch) werden nie verwendet.
+
+    Die Positionen der Teile ergeben sich aus zwei Roblox-Regeln:
+      1. Der Teil sitzt an seinem authored CFrame im Ordner des Assets.
+      2. Das Asset haengt ueber seine Rig-Attachments am Standard-Rig ein.
+         Weicht das Asset davon ab, wird der gesamte Versatz berechnet
+         (:func:`_rig_alignment_offset`) und auf alle Teile angewendet.
+    """
     try:
         _DIAGNOSTICS["assets"].append({
             "asset_id": asset_id,
@@ -858,8 +948,10 @@ def _load_r15_body_segments(
         marker = node.name.casefold()
         if marker in ("r6", "r15artistintent", "r15fixed", "r15"):
             context = marker
-        if context != "r6" and node.name in names and node.class_name in ("MeshPart", "Part"):
-            priority = {"r15artistintent": 3, "r15fixed": 2, "r15": 2, "": 1}.get(context, 1)
+        # "R6" ist die klassische Variante, "R15" die Studio-Vorschau (dort
+        # liegen die Teile 2 Studs zu hoch). Beide werden nicht verwendet.
+        if context not in ("r6", "r15") and node.name in names and node.class_name in ("MeshPart", "Part"):
+            priority = {"r15fixed": 4, "r15artistintent": 3, "": 1}.get(context, 0)
             if node.name not in candidates or priority > candidates[node.name][0]:
                 candidates[node.name] = (priority, node)
         for child in node.children:
@@ -867,6 +959,16 @@ def _load_r15_body_segments(
 
     for root in roots:
         visit(root)
+
+    chosen = [node for _, node in candidates.values()]
+    align_offset = _rig_alignment_offset(chosen)
+    if any(abs(v) > 1e-6 for v in align_offset):
+        print(
+            f"[body_part] Asset {asset_id}: Rig-Versatz zurueck auf das Standard-Rig "
+            f"({align_offset[0]:.3f}, {align_offset[1]:.3f}, {align_offset[2]:.3f})."
+        )
+    character_texture = _character_mesh_texture(roots)
+
     result: dict[str, BodyPartSpec] = {}
     for name, (_, node) in candidates.items():
         try:
@@ -884,6 +986,19 @@ def _load_r15_body_segments(
             tex_id = extract_asset_id(sa.prop("ColorMap", "ColorMapContent")) if sa else None
             if not tex_id:
                 tex_id = extract_asset_id(source.prop("TextureID", "TextureId", "TextureContent"))
+            if not tex_id:
+                # Klassische Pakete: die Textur haengt am CharacterMesh des Assets.
+                tex_id = character_texture
+            alpha_mode = "transparency"
+            tint = (1.0, 1.0, 1.0)
+            if sa is not None:
+                try:
+                    alpha_mode = ALPHA_MODE_NAMES.get(int(sa.prop("AlphaMode", default=0) or 0), "overlay")
+                except (TypeError, ValueError):
+                    alpha_mode = "overlay"
+                color = sa.prop("Color")
+                if color is not None and len(tuple(color)) >= 3:
+                    tint = tuple(float(c) for c in tuple(color)[:3])
             texture_path = None
             if tex_id:
                 try:
@@ -892,11 +1007,15 @@ def _load_r15_body_segments(
                 except Exception as exc:
                     print(f"[body_part] Textur {tex_id} fuer {name} nicht verfuegbar: {exc}")
                     texture_path = None
+            part_cframe = translate_cframe(_absolute_cframe(node), align_offset)
             result[name] = BodyPartSpec(
                 asset_id=asset_id, asset_type_id=asset_type_id, mesh=mesh,
                 mesh_scale=scale, mesh_offset=offset,
+                cframe=part_cframe,
                 transparency=float(node.prop("Transparency", default=0.0) or 0.0),
                 texture_path=texture_path,
+                tint_color=tint,
+                alpha_mode=alpha_mode,
             )
         except Exception as exc:
             print(f"[body_part] Segment {name} von {asset_id} konnte nicht geladen werden: {exc}")

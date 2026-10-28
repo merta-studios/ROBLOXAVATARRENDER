@@ -40,7 +40,7 @@ except ImportError:  # pragma: no cover - lokal ohne Blender-Systembibliotheken
 
 from scripts.gfx_layout import compute_spacing_transform
 from scripts.image_compositing import compose_background
-from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig, part_center
+from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig
 from scripts.r15_clothing import compute_part_uvs
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
@@ -293,8 +293,19 @@ def _solid_material(
     tint_srgb: tuple[float, float, float] = (1.0, 1.0, 1.0),
     alpha: float = 1.0,
     clothing_path: str | None = None,
+    alpha_mode: str = "overlay",
 ) -> Any:
-    """Erzeugt ein Principled-Material (Glossy/Matt) ohne Rig-Abhaengigkeit."""
+    """Erzeugt ein Principled-Material (Glossy/Matt) ohne Rig-Abhaengigkeit.
+
+    ``alpha_mode`` bildet Roblox' ``Enum.AlphaMode`` ab:
+
+    * ``overlay``      - Die ColorMap liegt ueber der BodyColor, transparente
+      Texel zeigen die BodyColor (Standard bei SurfaceAppearance).
+    * ``transparency`` - Der Alphakanal der Textur schneidet-Loecher aus dem
+      Mesh (klassische Texturen ohne SurfaceAppearance).
+    * ``tintmask``     - Getintete Textur wird ueber die ungetintete gemischt.
+    * ``opaque``       - Der Alphakanal der Textur wird ignoriert.
+    """
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     tree = mat.node_tree
@@ -330,8 +341,52 @@ def _solid_material(
         uv = tree.nodes.new("ShaderNodeUVMap")
         uv.uv_map = "UVMap"
         tree.links.new(uv.outputs["UV"], tex.inputs["Vector"])
-        tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-        tree.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+
+        # Roblox: SurfaceAppearance.Color ist ein Multiplikator auf die ColorMap.
+        tint_linear = tuple(
+            _srgb_to_linear(max(0.0, min(1.0, float(t)))) for t in tint_srgb
+        )
+        if any(abs(t - 1.0) > 1e-6 for t in tint_linear):
+            tint_node = tree.nodes.new("ShaderNodeMixRGB")
+            tint_node.blend_type = "MULTIPLY"
+            tint_node.inputs[0].default_value = 1.0
+            tree.links.new(tex.outputs["Color"], tint_node.inputs[1])
+            tint_node.inputs[2].default_value = (*tint_linear, 1.0)
+            textured = tint_node.outputs["Color"]
+        else:
+            textured = tex.outputs["Color"]
+
+        mode = str(alpha_mode or "overlay").casefold()
+        if mode == "overlay":
+            # Die Textur liegt ueber der BodyColor; transparente Texel zeigen
+            # die BodyColor des MeshParts.
+            mix = tree.nodes.new("ShaderNodeMixRGB")
+            mix.blend_type = "MIX"
+            base_linear = tuple(
+                _srgb_to_linear(max(0.0, min(1.0, float(c)))) for c in rgb_srgb
+            )
+            mix.inputs[1].default_value = (*base_linear, 1.0)
+            tree.links.new(textured, mix.inputs[2])
+            tree.links.new(tex.outputs["Alpha"], mix.inputs[0])
+            tree.links.new(mix.outputs["Color"], bsdf.inputs["Base Color"])
+        elif mode == "tintmask":
+            # Getintete Textur ueber die ungetintete Textur (Alpha = Maske).
+            mix = tree.nodes.new("ShaderNodeMixRGB")
+            mix.blend_type = "MIX"
+            tree.links.new(tex.outputs["Color"], mix.inputs[1])
+            tree.links.new(textured, mix.inputs[2])
+            tree.links.new(tex.outputs["Alpha"], mix.inputs[0])
+            tree.links.new(mix.outputs["Color"], bsdf.inputs["Base Color"])
+        else:
+            # transparency / opaque: die Texturfarbe ist die Farbe des Meshes.
+            tree.links.new(textured, bsdf.inputs["Base Color"])
+            if mode == "transparency":
+                # Der Alphakanal der Textur schneidet Loecher aus dem Mesh.
+                multiply = tree.nodes.new("ShaderNodeMath")
+                multiply.operation = "MULTIPLY"
+                tree.links.new(tex.outputs["Alpha"], multiply.inputs[0])
+                multiply.inputs[1].default_value = max(0.0, min(1.0, float(alpha)))
+                tree.links.new(multiply.outputs["Value"], bsdf.inputs["Alpha"])
         # Nur echte Alpha-Texturen muessen blended rendern; die neuen
         # R15-Teiltexturen sind opaque RGB und sollen kein Sorting-Rauschen.
         if hasattr(mat, "surface_render_method") and getattr(image, "channels", 4) == 4:
@@ -371,6 +426,20 @@ def _add_clothing_uv(mesh: Any, part_name: str, color_key: str) -> None:
         layer.data[loop.index].uv = uvs[loop.index]
 
 
+def _body_part_matrix_bl(cframe: tuple[float, ...]) -> Matrix:
+    """Transformiert ein Roblox-CFrame (Character-Space) in den Blender-Raum.
+
+    Roblox-Character-Space: HumanoidRootPart im Ursprung, Fusssohlen bei
+    y = -2. Blender: Z nach oben, Fusssohlen bei z = 0, also liegt der
+    Avatar-Root bei z = +2. Die Basisumkehrung ``T_RBX_TO_BL`` ist
+    involutorisch und wird daher auf beiden Seiten benutzt.
+    """
+    mat_rbx = _cframe_to_mat4(cframe)
+    mat_bl = T_RBX_TO_BL @ mat_rbx @ T_RBX_TO_BL
+    mat_bl[2, 3] += 2.0
+    return Matrix(mat_bl.tolist())
+
+
 def _create_inventory_part(
     part: R15Part, body_part: Any, srgb: tuple[float, float, float],
     finish: str, clothing_path: str | None, scene: Any, render_objects: list[Any],
@@ -387,13 +456,15 @@ def _create_inventory_part(
         tint_srgb=body_part.tint_color,
         alpha=1.0 - body_part.transparency,
         clothing_path=clothing_path,
+        alpha_mode=getattr(body_part, "alpha_mode", "overlay"),
     )
     mesh.materials.append(material)
     obj = bpy.data.objects.new(part.name, mesh)
     scene.collection.objects.link(obj)
-    # Asset-CFrames sind Studio-Speicherpositionen und keine Avatar-Pose.
-    # Die lokalen Mesh-Urspruenge gehoeren an die Zentren des Ziel-Rigs.
-    obj.location = part_center(part)
+    # Das Asset bringt seinen eigenen CFrame mit (Ordner "R15Fixed" des
+    # Assets). Genau dort sitzt das Teil am Roblox-Rig; die Positionen wurden
+    # beim Laden ueber die Rig-Attachments auf das Standard-Rig ausgerichtet.
+    obj.matrix_world = _body_part_matrix_bl(getattr(body_part, "cframe", IDENTITY_CFRAME))
     render_objects.append(obj)
     return obj
 

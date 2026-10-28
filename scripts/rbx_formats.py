@@ -57,6 +57,75 @@ IDENTITY_CFRAME: tuple[float, ...] = (
 )
 
 
+def cframe_position(cframe: Any) -> tuple[float, float, float]:
+    """(x, y, z) eines Roblox-CFrames (12-Tupel oder Matrix-Prop)."""
+    if cframe is None:
+        return (0.0, 0.0, 0.0)
+    values = list(cframe)
+    if len(values) < 3:
+        return (0.0, 0.0, 0.0)
+    return (float(values[0]), float(values[1]), float(values[2]))
+
+
+def compose_cframes(
+    parent: Any, child: Any
+) -> tuple[float, float, float, float, float, float, float, float, float, float, float, float]:
+    """Multipliziert zwei Roblox-CFrames: ``parent * child``.
+
+    Roblox-CFrames sind (Position, Rotationsmatrix). Die Multiplikation
+    ``C1 * C2`` verschiebt ``C2`` zuerst und dreht es dann um ``C1``:
+    ``p = p1 + R1 * p2`` und ``R = R1 * R2``.
+    """
+    p1 = cframe_position(parent)
+    p2 = cframe_position(child)
+    v = list(child) if child is not None else list(IDENTITY_CFRAME)
+    if len(v) < 12:
+        v = list(IDENTITY_CFRAME)
+    r1 = list(parent) if parent is not None else list(IDENTITY_CFRAME)
+    if len(r1) < 12:
+        r1 = list(IDENTITY_CFRAME)
+
+    # Rotationsmatrix von C1 (Zeilenweise: r00 r01 r02 / r10 .. / r20 ..)
+    m1 = [r1[3:6], r1[6:9], r1[9:12]]
+    m2 = [v[3:6], v[6:9], v[9:12]]
+
+    def _rot(m: list[list[float]], vec: tuple[float, float, float]) -> tuple[float, float, float]:
+        return (
+            m[0][0] * vec[0] + m[0][1] * vec[1] + m[0][2] * vec[2],
+            m[1][0] * vec[0] + m[1][1] * vec[1] + m[1][2] * vec[2],
+            m[2][0] * vec[0] + m[2][1] * vec[1] + m[2][2] * vec[2],
+        )
+
+    def _mul(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
+        return [
+            [sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)]
+            for i in range(3)
+        ]
+
+    rp = _rot(m1, p2)
+    rm = _mul(m1, m2)
+    return (
+        p1[0] + rp[0], p1[1] + rp[1], p1[2] + rp[2],
+        rm[0][0], rm[0][1], rm[0][2],
+        rm[1][0], rm[1][1], rm[1][2],
+        rm[2][0], rm[2][1], rm[2][2],
+    )
+
+
+def translate_cframe(
+    cframe: Any, offset: tuple[float, float, float]
+) -> tuple[float, float, float, float, float, float, float, float, float, float, float, float]:
+    """Verschiebt ein CFrame um ``offset`` (in Roblox-Weltachsen)."""
+    values = list(cframe) if cframe is not None else list(IDENTITY_CFRAME)
+    if len(values) < 12:
+        values = list(IDENTITY_CFRAME)
+    moved = compose_cframes(
+        (offset[0], offset[1], offset[2], 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+        tuple(values),
+    )
+    return moved
+
+
 def extract_asset_id(value: Any) -> int | None:
     """Extrahiert eine numerische Roblox Asset-ID aus Content-Strings/Tupeln."""
     if value is None or isinstance(value, bool):

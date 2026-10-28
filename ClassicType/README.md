@@ -21,20 +21,44 @@ werden).
 Inventory-Körperteile (z. B. „Roblox 2.0 Torso“) werden als echte Meshes mit
 ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
 
+* **Quelle der Teile** – Ein Körperteil-Asset enthält mehrere Varianten
+  desselben Körpers. Verwendet wird der Ordner `R15Fixed` (der kanonische
+  Roblox-Rig-Stand), ersatzweise `R15ArtistIntent` (die vom Künstler gewählte
+  Pose). `R6` (klassische Variante) und `R15` (Studio-Vorschau, dort liegen
+  die Teile 2 Studs zu hoch) werden nie verwendet.
 * **Platzierung** – Die Position kommt aus dem im Asset gespeicherten
-  `CFrame` des Segments (relativ zur `HumanoidRootPart` des Assets). Roblox
-  exportiert jedes Körperteil-Asset so, dass dessen Wurzel auf dem
-  Avatar-Wurzelpunkt liegt (`MakeExportVersion` im Roblox-Client-Plugin
-  `AvatarImporter`). Die CFrames werden deshalb direkt als Roblox-Koordinaten
+  `CFrame` des Segments (relativ zur `HumanoidRootPart` des Assets).
+  Zusätzlich wird das Asset über seine **Rig-Attachments** am Standard-Rig
+  ausgerichtet: Roblox hängt ein Körperteil-Asset über die
+  `R15FixedRigAttachmentMap` ein (Roblox-Client-Plugin `AssetImporter`,
+  `Utility/RigSetup/FixedRigPositions.luac.s`). Weichen die
+  Rig-Attachments eines Assets von dieser Map ab – wie bei vielen aus R6
+  konvertierten Paketen, die 1–2 Studs zu tief sitzen –, wird der
+  Versatz als Median über alle passenden Attachments berechnet und auf alle
+  Segmente des Assets angewendet. Die CFrames werden als Roblox-Koordinaten
   interpretiert und in Blender-Koordinaten umgerechnet
   (`x_bl, y_bl, z_bl = -x_rbx, z_rbx, y_rbx`, Root → `z = +2`).
+* **Textur** – Die Textur kommt aus der `SurfaceAppearance` (`ColorMap`) des
+  Segments, sonst vom `TextureID` des MeshParts. Klassische Pakete wie
+  „Roblox 2.0“ tragen ihre Textur am `CharacterMesh` des Assets
+  (`BaseTextureId`) – ohne sie fielen die Teile auf die flache
+  `BodyColor` zurück und wirkten braun.
 * **Farbe** – Die `BodyColors` des Avatars sind die `MeshPart.Color` des
   Segments. Das ist die dokumentierte Roblox-Verhaltensweise für
   „custom skin tones“: Die Alpha-Maske der Textur blendet über die
   Körperfarbe.
-* **Alpha** – Es gilt der `AlphaMode` der `SurfaceAppearance`:
+* **Alpha** – Es gilt der `AlphaMode` der `SurfaceAppearance`
+  (`Enum.AlphaMode`: `Overlay` = 0, `Transparency` = 1, `TintMask` = 2,
+  `Opaque` = 3):
   * `Overlay` (Standard): Die ColorMap wird über die `MeshPart.Color`
     gelegt; transparente Texel zeigen die Körperfarbe – niemals Schwarz.
   * `Transparency`: Der Alpha-Kanal schneidet echte Löcher in das Mesh.
   * `Opaque`: Der Alpha-Kanal wird ignoriert.
   * `TintMask`: Die getönte ColorMap wird über die ungetönte gemischt.
+
+  Klassische Pakete ohne `SurfaceAppearance` nutzen `Transparency`: Ihre
+  Textur ist eine echte Alpha-Textur, deren transparente Stellen in
+  Roblox ebenfalls durchsichtig sind. `SurfaceAppearance.Color` ist ein
+  Multiplikator auf die ColorMap und wird linear auf die Texturfarbe
+  angewendet.
+
