@@ -36,7 +36,7 @@ emote_asset_id = 0
 
 # Drehung des Avatars in Grad um die vertikale Achse:
 # 0 = schaut zur Mitte, 45 = schräg nach rechts, -45 = schräg nach links.
-rotation_deg = 25
+rotation_deg = 30
 
 # Abstand von oben und unten in Prozent der Avatar-Höhe. Die Avatar-Höhe ist die
 # Länge zwischen dem höchsten und tiefsten Punkt des 3D-Modells.
