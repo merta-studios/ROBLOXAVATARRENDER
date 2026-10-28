@@ -663,23 +663,6 @@ def render_classic_scene(
                 f"Classic{name}Mat", srgb, material_finish, texture_path=texture_path
             )
             body_objects[name] = _create_r15_part(part, material, scene, render_objects)
-    
-    # Kopf-Position korrigieren: Der blocky-rig-Kopf überlappt leicht mit dem Torso.
-    # Verschiebe den Kopf nach oben, sodass er genau auf dem Torso sitzt.
-    if "Head" in body_objects and "UpperTorso" in body_objects:
-        head_obj = body_objects["Head"]
-        torso_obj = body_objects["UpperTorso"]
-        
-        # Berechne die Oberkante des Torso und die Unterkante des Kopfes
-        torso_bbox = _world_bbox([torso_obj])
-        head_bbox = _world_bbox([head_obj])
-        if torso_bbox is not None and head_bbox is not None:
-            torso_top = torso_bbox[1][2]
-            head_bottom = head_bbox[0][2]
-            offset_z = torso_top - head_bottom
-            
-            # Verschiebe den Kopf nach oben
-            head_obj.location.z += offset_z
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.
     accessory_count = 0
@@ -715,6 +698,30 @@ def render_classic_scene(
         render_objects.append(obj)
         accessory_parents.append((obj, _accessory_group(acc)))
         accessory_count += 1
+
+    # 2b. Kopf-Position korrigieren: Der blocky-rig-Kopf überlappt leicht mit dem Torso.
+    # Verschiebe den Kopf nach oben, sodass er genau auf dem Torso sitzt.
+    # Auch Accessoires auf dem Kopf müssen mit verschoben werden.
+    head_offset_z = 0.0
+    if "Head" in body_objects and "UpperTorso" in body_objects:
+        head_obj = body_objects["Head"]
+        torso_obj = body_objects["UpperTorso"]
+        
+        # Berechne die Oberkante des Torso und die Unterkante des Kopfes
+        torso_bbox = _world_bbox([torso_obj])
+        head_bbox = _world_bbox([head_obj])
+        if torso_bbox is not None and head_bbox is not None:
+            torso_top = torso_bbox[1][2]
+            head_bottom = head_bbox[0][2]
+            head_offset_z = torso_top - head_bottom
+            
+            # Verschiebe den Kopf nach oben
+            head_obj.location.z += head_offset_z
+            
+            # Verschiebe auch Accessoires auf dem Kopf
+            for acc_obj, group_name in accessory_parents:
+                if group_name == "Head":
+                    acc_obj.location.z += head_offset_z
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote") and classic_emote is not None:
