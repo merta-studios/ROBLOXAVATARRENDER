@@ -1,5 +1,5 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "asilblox0"
+username = "MertaStudios"
 
 # Hintergrund: "transparent", Hex-Farbe #RGB oder #RRGGBB, direkte http(s)-Bild-URL
 # (max. 50 MB), lokaler Motivname (Originalfarbe) oder "Farbordner/Motiv", z. B.
@@ -44,7 +44,7 @@ rotation_deg = 30
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
 abstand_oben = 4
-abstand_unten = 4
+abstand_unten = 10
 
 # WICHTIG: Alle oben stehenden ClassicType-Optionen gehören auf die oberste
 # TOML-Ebene. Alles unter [outline] ist ausschließlich die Umrandung.
