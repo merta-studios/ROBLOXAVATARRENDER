@@ -43,8 +43,8 @@ rotation_deg = 30
 # 100 = oben bzw. unten noch eine komplette Avatar-Höhe Platz, bevor der Avatar
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
-abstand_oben = 5
-abstand_unten = 5
+abstand_oben = 4
+abstand_unten = 4
 
 # WICHTIG: Alle oben stehenden ClassicType-Optionen gehören auf die oberste
 # TOML-Ebene. Alles unter [outline] ist ausschließlich die Umrandung.
