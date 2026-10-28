@@ -62,28 +62,48 @@ jobs:
 
           # GFX-Typ und Config-Datei ermitteln.
           # Bei workflow_dispatch hat der Nutzer-Input Vorrang.
-          # Bei Push-Events wird aus den geänderten Dateien abgeleitet, welcher
-          # GFX-Typ-Ordner betroffen ist (ClassicType oder HearthandsType).
+          # Bei Push-Events wird aus den geänderten Dateien abgeleitet, welche
+          # GFX-Typen betroffen sind:
+          #   * ClassicType-Ordner + ClassicType-eigene Skripte -> ClassicType
+          #   * HearthandsType-Ordner + HearthandsType-eigene Skripte -> HearthandsType
+          #   * gemeinsame Dateien (Loader, Pipeline, Tests) -> beide Typen
+          # "latest-render" zeigt weiterhin den primaeren Typ, die weiteren
+          # Render landen als avatar-<typ>.png im selben Tag.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             GFX_TYPE="${GFX_TYPE:-HearthandsType}"
-            CONFIG_FILE="${GFX_TYPE}/configs.toml"
-            GFX_ARG="--gfx-type $GFX_TYPE"
+            GFX_TYPES="$GFX_TYPE"
           else
             CHANGED=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null || true)
-            if echo "$CHANGED" | grep -qE '^ClassicType/'; then
+            CLASSIC_CHANGED=0
+            HEARTHANDS_CHANGED=0
+            SHARED_CHANGED=0
+            if echo "$CHANGED" | grep -qE '^ClassicType/|^scripts/(classic_render|r15_blocky_rig|r15_clothing)\.py$'; then
+              CLASSIC_CHANGED=1
+            fi
+            if echo "$CHANGED" | grep -qE '^HearthandsType/|^scripts/blender_render\.py$'; then
+              HEARTHANDS_CHANGED=1
+            fi
+            if echo "$CHANGED" | grep -qE '^(scripts/(roblox_opencloud|run_render_pipeline|rbx_formats|render_config|gfx_layout|image_compositing|brick_colors)\.py|tests/|requirements\.txt)'; then
+              SHARED_CHANGED=1
+            fi
+            # "latest-render" zeigt den primaeren Typ; gemeinsame Aenderungen
+            # rendern zusaetzlich den ClassicType mit (Standard bleibt
+            # HearthandsType, damit der Tag nicht unbemerkt wechselt).
+            if [ "$CLASSIC_CHANGED" = "1" ]; then
               GFX_TYPE="ClassicType"
-              CONFIG_FILE="ClassicType/configs.toml"
-              GFX_ARG="--gfx-type ClassicType"
-            elif echo "$CHANGED" | grep -qE '^HearthandsType/'; then
-              GFX_TYPE="HearthandsType"
-              CONFIG_FILE="HearthandsType/configs.toml"
-              GFX_ARG="--gfx-type HearthandsType"
             else
               GFX_TYPE="HearthandsType"
-              CONFIG_FILE="HearthandsType/configs.toml"
-              GFX_ARG=""
+            fi
+            GFX_TYPES="$GFX_TYPE"
+            if [ "$CLASSIC_CHANGED" = "1" ] && [ "$HEARTHANDS_CHANGED" = "0" ] && [ "$SHARED_CHANGED" = "0" ]; then
+              GFX_TYPES="ClassicType"
+            elif [ "$CLASSIC_CHANGED" = "0" ] && [ "$HEARTHANDS_CHANGED" = "1" ] && [ "$SHARED_CHANGED" = "0" ]; then
+              GFX_TYPES="HearthandsType"
+            else
+              GFX_TYPES="ClassicType HearthandsType"
             fi
           fi
+          echo "Render-GFX-Typen:$GFX_TYPES (primaer: $GFX_TYPE)"
 
           # 1. System-Bibliotheken für Headless Blender 5.x Cycles (Xvfb / OpenGL)
           if ! sudo apt-get update -qq >/tmp/setup.log 2>&1 || \
@@ -116,30 +136,43 @@ jobs:
 
           mkdir -p /tmp/render_out
 
-          # 4. Roblox-Avatar und Render-Konfiguration des gewählten GFX-Typs ausführen
-          if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX +render -noreset" \
-               python scripts/run_render_pipeline.py \
-                 --config-file "$CONFIG_FILE" \
-                 $GFX_ARG \
-                 --blend-file WomanRig.blend \
-                 --output /tmp/render_out/avatar.png \
-                 --status-json /tmp/render_status.json \
-               >/tmp/blender_stdout.log 2>/tmp/blender_stderr.log; then
-            if [ ! -f /tmp/render_status.json ]; then
-              {
-                echo "Blender/Render-Prozess unerwartet beendet:"
-                tail -n 45 /tmp/blender_stderr.log
-              } >/tmp/fatal_error.txt
+          # 4. Roblox-Avatar und Render-Konfiguration der betroffenen GFX-Typen ausführen
+          for TYPE in $GFX_TYPES; do
+            CONFIG_FILE="${TYPE}/configs.toml"
+            if ! LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX +render -noreset" \
+                 python scripts/run_render_pipeline.py \
+                   --config-file "$CONFIG_FILE" \
+                   --gfx-type "$TYPE" \
+                   --blend-file WomanRig.blend \
+                   --output "/tmp/render_out/avatar-${TYPE}.png" \
+                   --status-json "/tmp/render_status-${TYPE}.json" \
+                 >"/tmp/blender_stdout-${TYPE}.log" 2>"/tmp/blender_stderr-${TYPE}.log"; then
+              if [ ! -f "/tmp/render_status-${TYPE}.json" ]; then
+                {
+                  echo "Blender/Render-Prozess unerwartet beendet (${TYPE}):"
+                  tail -n 45 "/tmp/blender_stderr-${TYPE}.log"
+                } >/tmp/fatal_error.txt
+              fi
+              exit 1
             fi
-            exit 1
-          fi
+            if [ "$TYPE" = "$GFX_TYPE" ]; then
+              cp "/tmp/render_out/avatar-${TYPE}.png" /tmp/render_out/avatar.png
+            fi
+          done
 
           # 5. Aktuelles Render-Ergebnis ohne Git-History-Müll auf main als einzelnen Orphan-Tag & Release speichern
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          BLOB_SHA=$(git hash-object -w /tmp/render_out/avatar.png)
-          TREE_SHA=$(printf "100644 blob %s\tavatar.png\n" "$BLOB_SHA" | git mktree)
+          BLOB_PRIMARY=$(git hash-object -w /tmp/render_out/avatar.png)
+          {
+            printf '100644 blob %s\tavatar.png\n' "$BLOB_PRIMARY"
+            for TYPE in $GFX_TYPES; do
+              BLOB=$(git hash-object -w "/tmp/render_out/avatar-${TYPE}.png")
+              printf '100644 blob %s\tavatar-%s.png\n' "$BLOB" "$TYPE"
+            done
+          } | git mktree > /tmp/tree_sha.txt
+          TREE_SHA=$(cat /tmp/tree_sha.txt)
           COMMIT_SHA=$(git commit-tree "$TREE_SHA" -m "Latest avatar render ($GFX_TYPE)")
 
           if ! git push --force origin "${COMMIT_SHA}:refs/tags/latest-render" >/tmp/push_err.log 2>&1; then
@@ -155,7 +188,7 @@ jobs:
           gh release create latest-render /tmp/render_out/avatar.png \
             --target "$COMMIT_SHA" \
             --title "Aktuelles Avatar Render ($GFX_TYPE)" \
-            --notes "Automatisch gerenderter Roblox Avatar ($GFX_TYPE, Blender Cycles, Hintergrund gemäß $CONFIG_FILE)." \
+            --notes "Automatisch gerenderter Roblox Avatar ($GFX_TYPE, Blender Cycles, Hintergrund gemäß ${GFX_TYPE}/configs.toml)." \
             >/dev/null 2>&1 || true
 
           echo "RENDER_IMAGE_URL=https://github.com/${GITHUB_REPOSITORY}/blob/${COMMIT_SHA}/avatar.png?raw=true" >> "$GITHUB_ENV"
@@ -165,7 +198,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: avatar-render-latest
-          path: /tmp/render_out/avatar.png
+          path: /tmp/render_out/
           retention-days: 7
 
       - name: Workflow-Übersicht ausgeben
@@ -179,7 +212,11 @@ jobs:
             exit 0
           fi
 
-          if [ -f /tmp/render_status.json ]; then
+          if [ -f /tmp/fatal_error.txt ]; then
+            ERR_TEXT=$(cat /tmp/fatal_error.txt)
+          elif ls /tmp/render_status-*.json >/dev/null 2>&1; then
+            ERR_TEXT=$(python -c 'import glob, json; texts = [json.load(open(p, encoding="utf-8")).get("error", "") for p in glob.glob("/tmp/render_status-*.json")]; print(" | ".join(t for t in texts if t) or "Unbekannter Fehler")')
+          elif [ -f /tmp/render_status.json ]; then
             ERR_TEXT=$(python -c 'import json; print(json.load(open("/tmp/render_status.json", encoding="utf-8")).get("error", "Unbekannter Fehler"))')
           elif [ -f /tmp/fatal_error.txt ]; then
             ERR_TEXT=$(cat /tmp/fatal_error.txt)
