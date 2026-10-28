@@ -33,7 +33,6 @@ from scripts.roblox_opencloud import (
     RobloxOpenCloudClient,
     load_avatar_bundle,
 )
-from scripts import _diag_probe  # TEMPORAERE DIAGNOSE
 from scripts.render_config import (
     CLASSIC_POSES,
     gfx_type_from_config_path,
@@ -59,24 +58,6 @@ def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> 
         raise PipelineError(
             "Der Hintergrund sollte transparent sein, der Alpha-Kanal ist jedoch durchgehend deckend."
         )
-
-
-def _embed_diagnostics(png_path: Path, payload: Any) -> None:
-    """TEMPORAERE DIAGNOSE: schreibt Asset-Infos in die PNG-Metadaten."""
-    if not payload:
-        return
-    import base64
-    import gzip
-
-    from PIL import PngImagePlugin
-
-    blob = base64.b64encode(gzip.compress(json.dumps(payload).encode("utf-8"))).decode("ascii")
-    img = Image.open(png_path)
-    img.load()
-    info = PngImagePlugin.PngInfo()
-    info.add_text("rbxdiag", blob)
-    img.save(png_path, format="PNG", pnginfo=info)
-    print(f"[diag] Diagnose-Daten ({len(blob)} Bytes) in die PNG-Metadaten geschrieben.")
 
 
 def render_hearthands(
@@ -275,12 +256,6 @@ def main() -> int:
                 )
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
-
-        # TEMPORAERE DIAGNOSE
-        try:
-            _embed_diagnostics(output_path, _diag_probe.DIAG)
-        except Exception as exc:  # pragma: no cover
-            print(f"[diag] Diagnose konnte nicht geschrieben werden: {exc}")
 
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(

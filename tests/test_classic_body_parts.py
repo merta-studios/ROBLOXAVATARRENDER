@@ -248,6 +248,79 @@ class ClassicBlenderBodyTests(unittest.TestCase):
                 self.assertGreaterEqual(v, 0.0)
                 self.assertLessEqual(v, 1.0)
 
+    def test_classic_package_is_projected_per_face_not_via_the_package_uvs(self):
+        """Klassische Pakete werden je Flaeche auf das Classic-Template projiziert.
+
+        Die UVs eines klassischen Pakets (z. B. "Roblox 2.0") liegen nicht im
+        Template-Raum: gemessen liegt das Front-Face des LowerTorso im
+        unteren Limb-Bereich des Templates. Roblox legt die Classic-Kleidung
+        darum ueber die offiziellen Template-Rechtecke je Flaeche auf das
+        Mesh - die UVs des Assets werden dabei verworfen.
+        """
+        from scripts.classic_render import _create_inventory_part
+        from scripts.r15_clothing import face_uv_rect
+        from scripts.roblox_opencloud import BodyPartSpec
+
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        # Wuerfel im Roblox-Raum (x rechts, y oben, z nach hinten).
+        verts = [
+            (-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+            (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1),
+        ]
+        quads = [
+            (0, 3, 2, 1),   # Roblox-Front (-z)
+            (4, 5, 6, 7),   # +z
+            (0, 1, 5, 4),   # -y
+            (2, 3, 7, 6),   # +y
+            (0, 4, 7, 3),   # -x
+            (1, 2, 6, 5),   # +x
+        ]
+        faces = []
+        for a, b, c, d in quads:
+            faces.append((a, b, c))
+            faces.append((a, c, d))
+        # UVs des Pakets: liegen bewusst nicht im Template-Raum.
+        uvs = [(0.35, 0.75)] * len(verts)
+        body = BodyPartSpec(1, 27, MeshData("test", verts, [(0.0, 0.0, 1.0)] * len(verts), uvs, None, faces))
+        self.assertIsNone(body.texture_path)
+
+        part_data = load_r15_blocky_rig()["UpperTorso"]
+        with tempfile.TemporaryDirectory() as tmp:
+            texture = Path(tmp) / "classic_body.png"
+            Image.new("RGB", (8, 8), (30, 40, 50)).save(texture)
+            objects = []
+            obj = _create_inventory_part(
+                part_data, body, (1, 1, 1), "Matt", None, bpy.context.scene, objects,
+                classic_texture_path=str(texture),
+            )
+            layer = obj.data.uv_layers["UVMap"]
+            expected = {
+                "Front": face_uv_rect("Front"), "Back": face_uv_rect("Back"),
+                "Left": face_uv_rect("Left"), "Right": face_uv_rect("Right"),
+                "Top": face_uv_rect("Top"), "Bottom": face_uv_rect("Bottom"),
+            }
+            checked = 0
+            for poly in obj.data.polygons:
+                nx, ny, nz = poly.normal
+                ax, ay, az = abs(nx), abs(ny), abs(nz)
+                if ax >= ay and ax >= az:
+                    direction = "Right" if nx < 0 else "Left"
+                elif ay >= ax and ay >= az:
+                    direction = "Front" if ny < 0 else "Back"
+                else:
+                    direction = "Top" if nz > 0 else "Bottom"
+                u0, v0, u1, v1 = expected[direction]
+                for loop_index in poly.loop_indices:
+                    u, v = layer.data[loop_index].uv
+                    self.assertGreaterEqual(u, u0 - 1e-6)
+                    self.assertLessEqual(u, u1 + 1e-6)
+                    self.assertGreaterEqual(v, v0 - 1e-6)
+                    self.assertLessEqual(v, v1 + 1e-6)
+                    # Die UVs des Pakets wurden verworfen.
+                    self.assertNotAlmostEqual(u, 0.35, places=4)
+                checked += 1
+            self.assertEqual(checked, 12)
+
     def test_alpha_modes_follow_roblox_semantics(self):
         """Overlay mischt die BodyColor, Transparency schneidet Loecher."""
         from scripts.classic_render import _solid_material
