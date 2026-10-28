@@ -40,9 +40,16 @@ ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
   (`x_bl, y_bl, z_bl = -x_rbx, z_rbx, y_rbx`, Root → `z = +2`).
 * **Textur** – Die Textur kommt aus der `SurfaceAppearance` (`ColorMap`) des
   Segments, sonst vom `TextureID` des MeshParts. Klassische Pakete wie
-  „Roblox 2.0“ tragen ihre Textur am `CharacterMesh` des Assets
-  (`BaseTextureId`) – ohne sie fielen die Teile auf die flache
-  `BodyColor` zurück und wirkten braun.
+  „Roblox 2.0“ bringen gar keine eigene Textur mit: Ihre Meshes sind auf
+  die klassische R6-Körpertextur gemappt, die der Roblox-Client aus
+  `BodyColors` und Classic-Kleidung zusammensetzt. Solche Teile nutzen
+  deshalb den zusammengesetzten klassischen Körperatlas
+  (`compose_r6_body_texture`). Ohne ihn bliebe nur die flache `BodyColor`
+  und die Teile wirkten braun.
+* **Kleidung** – Classic-Kleidung gehört nur zum klassischen Körper
+  (Blocky-Rig). Ein ausgerüstetes Körperteil-Paket bringt seine eigene
+  Textur mit und wird deshalb nicht zusätzlich mit der Kleidung
+  projiziert.
 * **Farbe** – Die `BodyColors` des Avatars sind die `MeshPart.Color` des
   Segments. Das ist die dokumentierte Roblox-Verhaltensweise für
   „custom skin tones“: Die Alpha-Maske der Textur blendet über die
