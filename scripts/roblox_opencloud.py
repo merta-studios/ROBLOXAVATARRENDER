@@ -40,73 +40,6 @@ DEFAULT_SMILE_ASSET_ID = 144075659
 # Roblox Enum.AlphaMode (siehe create.roblox.com/docs/reference/engine/enums/AlphaMode)
 ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmask", 3: "opaque"}
 
-# --- TEMPORAERE DIAGNOSE (wird nach der Analyse wieder entfernt) -------------
-_DIAGNOSTICS: dict[str, Any] = {"textures": {}, "assets": []}
-
-
-def _diag_value(value: Any) -> Any:
-    if isinstance(value, RbxNode):
-        return f"<{value.class_name}:{value.name}>"
-    if isinstance(value, (list, tuple)):
-        return [_diag_value(v) for v in value]
-    if isinstance(value, float):
-        return round(value, 5)
-    return value
-
-
-def _diag_dump_nodes(roots: list[RbxNode]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-
-    def walk(node: RbxNode, path: str, parent_pos: tuple[float, float, float]) -> None:
-        cf = node.prop("CFrame", default=IDENTITY_CFRAME)
-        values = tuple(float(v) for v in cf) if cf and len(cf) == 12 else IDENTITY_CFRAME
-        pos = (parent_pos[0] + values[0], parent_pos[1] + values[1], parent_pos[2] + values[2])
-        entry: dict[str, Any] = {"p": path, "c": node.class_name, "abs": [round(v, 4) for v in pos]}
-        if node.class_name in ("MeshPart", "CharacterMesh", "SurfaceAppearance"):
-            entry["props"] = {
-                key: _diag_value(val) for key, val in node.props.items()
-                if key not in ("CFrame", "Size", "InitialSize")
-            }
-        for key in (
-            "Size", "InitialSize", "MeshSize", "Transparency",
-            "Color", "BrickColor", "TextureID", "TextureId", "TextureContent",
-            "MeshId", "MeshContent", "ColorMap", "ColorMapContent",
-            "AlphaMode", "PrimaryPart", "Scale", "Offset", "MeshType",
-            "Value", "BodyPart", "BaseTextureId", "OverrideTextureId",
-        ):
-            val = node.prop(key)
-            if val is not None:
-                entry[key] = _diag_value(val)
-        out.append(entry)
-        for child in node.children:
-            walk(child, f"{path}/{child.name}", pos)
-
-    for root in roots:
-        walk(root, root.name, (0.0, 0.0, 0.0))
-    return out
-
-
-def _diag_texture_stats(image: Image.Image) -> dict[str, Any]:
-    rgba = image.convert("RGBA")
-    arr = np.asarray(rgba, dtype=np.int32)
-    alpha = arr[:, :, 3]
-    zero = alpha == 0
-    full = alpha == 255
-    stats: dict[str, Any] = {
-        "size": [int(rgba.size[0]), int(rgba.size[1])],
-        "mode": rgba.mode,
-        "alpha_min": int(alpha.min()),
-        "alpha_max": int(alpha.max()),
-        "frac_zero": round(float(zero.mean()), 4),
-        "frac_full": round(float(full.mean()), 4),
-    }
-    if zero.any():
-        stats["mean_rgb_zero"] = [round(float(v), 2) for v in arr[:, :, :3][zero].mean(axis=0)]
-    if full.any():
-        stats["mean_rgb_full"] = [round(float(v), 2) for v in arr[:, :, :3][full].mean(axis=0)]
-    return stats
-
-
 # Korblox Deathspeaker Right Leg - das berühmte, 17.000 Robux teure Bein des
 # Korblox-Deathspeaker-Bundles (offiziell von Roblox, nicht mehr im Verkauf).
 # Asset-ID 139607718, Asset-Typ Right Leg (31).
@@ -198,7 +131,6 @@ class AvatarBundle:
     body_parts: dict[str, BodyPartSpec] = field(default_factory=dict)
     r15_clothing_overlays: dict[str, str] = field(default_factory=dict)
     # TEMPORAERE DIAGNOSE
-    diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -608,12 +540,7 @@ class RobloxOpenCloudClient:
                 f"transparency={img.info.get('transparency')} "
                 f"raw_format={raw[:8]!r}"
             )
-            out = img.convert("RGBA")
-            try:
-                _DIAGNOSTICS["textures"][str(asset_id)] = _diag_texture_stats(out)
-            except Exception:  # pragma: no cover - Diagnose darf nie den Render brechen
-                pass
-            return out
+            return img.convert("RGBA")
         except Exception:
             pass
 
@@ -939,14 +866,6 @@ def _load_r15_body_segments(
          Weicht das Asset davon ab, wird der gesamte Versatz berechnet
          (:func:`_rig_alignment_offset`) und auf alle Teile angewendet.
     """
-    try:
-        _DIAGNOSTICS["assets"].append({
-            "asset_id": asset_id,
-            "asset_type_id": asset_type_id,
-            "nodes": _diag_dump_nodes(roots),
-        })
-    except Exception:  # pragma: no cover - Diagnose darf nie den Render brechen
-        pass
     candidates: dict[str, tuple[int, RbxNode]] = {}
 
     def visit(node: RbxNode, context: str = "") -> None:
@@ -1022,20 +941,6 @@ def _load_r15_body_segments(
                     "- es wird die klassische Koerpertextur verwendet."
                 )
             part_cframe = translate_cframe(_absolute_cframe(node), align_offset)
-            try:
-                uvs = mesh.uvs or []
-                uv_bounds = [
-                    round(min(u for u, _ in uvs), 4),
-                    round(min(v for _, v in uvs), 4),
-                    round(max(u for u, _ in uvs), 4),
-                    round(max(v for _, v in uvs), 4),
-                ] if uvs else None
-                _DIAGNOSTICS.setdefault("body_parts", []).append({
-                    "asset_id": asset_id, "name": name, "uv": uv_bounds,
-                    "texture": tex_id, "fallback": bool(texture_path and not tex_id),
-                })
-            except Exception:  # pragma: no cover - Diagnose darf nie den Render brechen
-                pass
             result[name] = BodyPartSpec(
                 asset_id=asset_id, asset_type_id=asset_type_id, mesh=mesh,
                 mesh_scale=scale, mesh_offset=offset,
@@ -1250,16 +1155,6 @@ def load_avatar_bundle(
         raw_acc = client.fetch_asset_bytes(aid)
         roots = parse_rbx_model(raw_acc)
         all_nodes = [n for r in roots for n in ([r] + r.descendants())]
-        try:
-            _DIAGNOSTICS["assets"].append({
-                "asset_id": aid,
-                "asset_type_id": atype_id,
-                "name": aname,
-                "nodes": _diag_dump_nodes(roots),
-            })
-        except Exception:  # pragma: no cover - Diagnose darf nie den Render brechen
-            pass
-
         acc_node = next(
             (n for n in all_nodes if n.class_name in ("Accessory", "Hat", "Accoutrement")),
             roots[0] if roots else None,
@@ -1406,5 +1301,4 @@ def load_avatar_bundle(
         r15_part_textures=r15_part_textures,
         body_parts=body_parts,
         r15_clothing_overlays=r15_clothing_overlays,
-        diagnostics=_DIAGNOSTICS,
     )

@@ -40,12 +40,17 @@ ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
   (`x_bl, y_bl, z_bl = -x_rbx, z_rbx, y_rbx`, Root → `z = +2`).
 * **Textur** – Die Textur kommt aus der `SurfaceAppearance` (`ColorMap`) des
   Segments, sonst vom `TextureID` des MeshParts. Klassische Pakete wie
-  „Roblox 2.0“ bringen gar keine eigene Textur mit: Ihre Meshes sind auf
-  die klassische R6-Körpertextur gemappt, die der Roblox-Client aus
-  `BodyColors` und Classic-Kleidung zusammensetzt. Solche Teile nutzen
-  deshalb den zusammengesetzten klassischen Körperatlas
-  (`compose_r6_body_texture`). Ohne ihn bliebe nur die flache `BodyColor`
-  und die Teile wirkten braun.
+  „Roblox 2.0“ bringen gar keine eigene Textur mit (am MeshPart ist
+  `TextureID` leer, am `CharacterMesh` existiert nur `BodyPart`). Im
+  Roblox-Client zeigen diese Meshes die klassische Körpertextur, die aus
+  `BodyColors` und Classic-Kleidung zusammengesetzt wird. Der Renderer
+  malt diese klassische Körpertextur (`compose_r15_part_textures`) direkt
+  auf das Mesh: Die UVs des Assets passen nicht zu diesem Atlas, also
+  werden sie neu berechnet – jede Fläche wird über ihre Normale als
+  Front/Back/Left/Right/Top/Bottom klassifiziert und bekommt das passende
+  Tile des Atlas (`compute_part_uvs`), genau so wie Roblox die klassischen
+  Körperteile auf die Körpertextur legt. Ohne das bliebe nur die flache
+  `BodyColor` und die Teile wirkten braun.
 * **Kleidung** – Classic-Kleidung gehört nur zum klassischen Körper
   (Blocky-Rig). Ein ausgerüstetes Körperteil-Paket bringt seine eigene
   Textur mit und wird deshalb nicht zusätzlich mit der Kleidung
