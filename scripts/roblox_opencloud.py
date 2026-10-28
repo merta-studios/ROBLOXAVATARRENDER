@@ -976,12 +976,13 @@ def load_avatar_bundle(
                         # Base color (Color3uint8 ist 0-255, muss zu 0-1 konvertiert werden)
                         col_raw = mesh_part.prop("Color", "Color3uint8")
                         if isinstance(col_raw, tuple) and len(col_raw) == 3:
-                            # Prüfe ob die Werte im 0-255 Bereich sind
-                            if all(0 <= v <= 255 for v in col_raw):
-                                base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
-                            else:
+                            # Prüfe ob die Werte im 0-1 Bereich sind (alle <= 1.0)
+                            if all(v <= 1.0 for v in col_raw):
                                 # Werte sind bereits 0-1
                                 base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
+                            else:
+                                # Werte sind 0-255, konvertiere zu 0-1
+                                base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
                 
                 elif special_mesh is not None:
                     mid = extract_asset_id(special_mesh.prop("MeshId", "MeshContent"))
@@ -1003,10 +1004,10 @@ def load_avatar_bundle(
                         if parent_node is not None:
                             col_raw = parent_node.prop("Color", "Color3uint8")
                             if isinstance(col_raw, tuple) and len(col_raw) == 3:
-                                if all(0 <= v <= 255 for v in col_raw):
-                                    base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
-                                else:
+                                if all(v <= 1.0 for v in col_raw):
                                     base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
+                                else:
+                                    base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
                 
                 if mesh_data is None:
                     continue

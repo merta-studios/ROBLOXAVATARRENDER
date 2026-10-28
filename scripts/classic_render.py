@@ -652,6 +652,12 @@ def render_classic_scene(
             
             obj = bpy.data.objects.new(name, mesh)
             scene.collection.objects.link(obj)
+            
+            # CFrame-Transformation anwenden (Position und Rotation aus dem Inventar)
+            cframe_matrix = _cframe_to_mat4(body_part.cframe)
+            blender_matrix = T_RBX_TO_BL @ cframe_matrix @ T_RBX_TO_BL
+            obj.matrix_world = Matrix(blender_matrix.tolist())
+            
             render_objects.append(obj)
             body_objects[name] = obj
         else:
