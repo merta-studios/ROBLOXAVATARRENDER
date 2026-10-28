@@ -64,7 +64,8 @@ class R15ClothingTests(unittest.TestCase):
                 self.assertEqual(upper.getpixel(tile_center("Back")), SHIRT_RGB)
             with Image.open(out["LowerTorso"]) as lower:
                 self.assertEqual(lower.getpixel(tile_center("Front")), TSHIRT_RGB)
-                self.assertEqual(lower.getpixel(tile_center("Back")), PANTS_RGB)
+                # Shirt liegt ueber der Hose, also auch auf dem Untertorso.
+                self.assertEqual(lower.getpixel(tile_center("Back")), SHIRT_RGB)
             with Image.open(out["LeftUpperArm"]) as arm:
                 self.assertEqual(arm.getpixel(tile_center("Front")), SHIRT_RGB)
             with Image.open(out["LeftUpperLeg"]) as leg:
@@ -72,6 +73,19 @@ class R15ClothingTests(unittest.TestCase):
             with Image.open(out["Head"]) as head:
                 self.assertEqual(head.getpixel(tile_center("Front")), FACE_RGB)
                 self.assertEqual(head.getpixel(tile_center("Back")), BODY_COLORS["head"])
+
+    def test_lower_torso_keeps_pants_under_a_transparent_shirt(self) -> None:
+        transparent_shirt = Image.new("RGBA", (585, 559), (0, 0, 0, 0))
+        pants = Image.new("RGBA", (585, 559), (*PANTS_RGB, 255))
+        with tempfile.TemporaryDirectory() as tmp:
+            out = compose_r15_part_textures(
+                BODY_COLORS, transparent_shirt, pants, None, None, Path(tmp)
+            )
+            with Image.open(out["LowerTorso"]) as lower:
+                self.assertEqual(lower.getpixel(tile_center("Front")), PANTS_RGB)
+                self.assertEqual(lower.getpixel(tile_center("Back")), PANTS_RGB)
+            with Image.open(out["UpperTorso"]) as upper:
+                self.assertEqual(upper.getpixel(tile_center("Back")), BODY_COLORS["torso"])
 
     def test_without_clothing_all_tiles_use_body_colors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -125,11 +125,12 @@ def _as_tile(img: Image.Image, segment: str | None = None) -> Image.Image:
 
 
 def _part_style(part_name: str) -> tuple[str | None, str | None, str | None]:
-    """(Template-Gruppe, Segment, Template-Name) fuer ein R15-Teil."""
-    if part_name == "Head":
+    """(Template-Gruppe, Segment, Template-Name) fuer Arm-/Bein-Teile.
+
+    Kopf sowie Ober-/Untertorso werden in ``_face_layers`` separat behandelt.
+    """
+    if part_name == "Head" or part_name in ("UpperTorso", "LowerTorso"):
         return (None, None, None)
-    if part_name in ("UpperTorso", "LowerTorso"):
-        return ("torso", _SEGMENT_BY_PART[part_name], "shirt" if part_name == "UpperTorso" else "pants")
     side = "left" if part_name.startswith("Left") else "right"
     template = "shirt" if "Arm" in part_name or "Hand" in part_name else "pants"
     return (side, _SEGMENT_BY_PART[part_name], template)
@@ -149,6 +150,22 @@ def _face_layers(
             return [_as_tile(face_img)]
         return []
 
+    # Ober- und Untertorso teilen sich dasselbe Shirt-Torso-Template im
+    # Verhaeltnis 96/32 Pixel. Roblox legt Shirt ueber Pants; deshalb bekommt
+    # LowerTorso zuerst die Hose und danach das Shirt (und ggf. das T-Shirt).
+    if part_name in ("UpperTorso", "LowerTorso"):
+        segment = _SEGMENT_BY_PART[part_name]
+        rect = CLOTHING_RECTS["torso"][face]
+        effective_segment = None if face in ("Top", "Bottom") else segment
+        layers: list[Image.Image] = []
+        if part_name == "LowerTorso" and pants_img is not None:
+            layers.append(_as_tile(crop_template_rect(pants_img, rect), effective_segment))
+        if shirt_img is not None:
+            layers.append(_as_tile(crop_template_rect(shirt_img, rect), effective_segment))
+        if face == "Front" and tshirt_img is not None:
+            layers.append(_as_tile(tshirt_img, segment))
+        return layers
+
     group, segment, template_name = _part_style(part_name)
     if group is None:
         return []
@@ -159,13 +176,7 @@ def _face_layers(
     rect = CLOTHING_RECTS[group][face]
     # Top/Bottom-Kappen sind nur 64 px hoch; dort nicht vertikal splitten.
     effective_segment = None if face in ("Top", "Bottom") else segment
-    layers: list[Image.Image] = [_as_tile(crop_template_rect(template, rect), effective_segment)]
-
-    # T-Shirt liegt als Decal auf der vorderen Torso-Haelfte.
-    if part_name in ("UpperTorso", "LowerTorso") and face == "Front" and tshirt_img is not None:
-        layers.append(_as_tile(tshirt_img, segment))
-
-    return layers
+    return [_as_tile(crop_template_rect(template, rect), effective_segment)]
 
 
 def compose_r15_part_texture(

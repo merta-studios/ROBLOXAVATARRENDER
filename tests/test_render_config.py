@@ -143,6 +143,43 @@ class RenderConfigTests(unittest.TestCase):
                 self.assertEqual(rgba.getpixel((2, 3))[:3], (255, 255, 255))
                 self.assertEqual(rgba.getpixel((3, 3))[:3], (200, 30, 40))
 
+    def test_outline_is_not_pinned_to_canvas_edge(self):
+        """Bei clippendem Avatar darf die Outline nicht als Randlinie kleben."""
+        from scripts.image_compositing import apply_avatar_outline
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            # 1. Avatar bedeckt den ganzen Canvas (geht ueber alle Raender
+            # hinaus). Es gibt keine sichtbare Kante -> keine Outline.
+            full_avatar = root / "full.png"
+            full_out = root / "full_out.png"
+            Image.new("RGBA", (12, 12), (200, 30, 40, 255)).save(full_avatar)
+            Image.new("RGBA", (12, 12), (0, 0, 0, 0)).save(full_out)
+            apply_avatar_outline(
+                full_out, full_avatar, thickness_percent=25,
+                outside=False, fade_start_percent=100, color=(255, 255, 255),
+            )
+            with Image.open(full_out) as image:
+                self.assertEqual(image.convert("RGBA").getchannel("A").getextrema(), (0, 0))
+
+            # 2. Avatar geht ueber den Rand, hat aber ein Loch im Inneren.
+            # Die Outline folgt dem Loch, nicht dem Canvas-Rand.
+            holed = Image.new("RGBA", (12, 12), (200, 30, 40, 255))
+            ImageDraw.Draw(holed).rectangle((5, 5, 6, 6), fill=(0, 0, 0, 0))
+            holed_avatar = root / "holed.png"
+            holed_out = root / "holed_out.png"
+            holed.save(holed_avatar)
+            Image.new("RGBA", (12, 12), (0, 0, 0, 0)).save(holed_out)
+            apply_avatar_outline(
+                holed_out, holed_avatar, thickness_percent=10,
+                outside=False, fade_start_percent=100, color=(255, 255, 255),
+            )
+            with Image.open(holed_out) as image:
+                rgba = image.convert("RGBA")
+                self.assertGreater(rgba.getpixel((4, 5))[3], 0)
+                self.assertEqual(rgba.getpixel((0, 0))[3], 0)
+                self.assertEqual(rgba.getpixel((0, 6))[3], 0)
+
     def test_korblox_and_headless_default_to_false(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.write_config(Path(temp), {"username": "User"})

@@ -2,7 +2,7 @@
 
 Diese Tests laufen nur in der CI (dort ist bpy==5.0.1 installiert). Lokal
 werden sie nicht gesammelt, damit ``unittest discover`` ohne Blender exakt
-die 19 reinen Python-Tests ausfuehrt.
+die 26 reinen Python-Tests ausfuehrt.
 """
 import tempfile
 import unittest

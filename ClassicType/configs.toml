@@ -13,6 +13,8 @@ material = "Glossy"
 
 # Classic-Shirt, -Hose, -T-Shirt und Face-Decal werden automatisch als
 # R15-Teiltexturen auf den offiziellen Blocky-Rig gelegt (scripts/r15_clothing.py).
+# Das Shirt liegt dabei auf Ober- und Untertorso; bei einem Avatar, der ueber
+# den Bildrand hinausgeht, wird die Outline nicht als Randlinie gezeichnet.
 
 # Dieser GFX-Typ ("ClassicType") lädt den Avatar als R15 komplett über die
 # Roblox Avatar/Open-Cloud-API statt aus dem R6-Rig-Setup von HearthandsType.
