@@ -8,6 +8,7 @@ Render-Pfade die Szene des anderen oeffnen oder kennen muss.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -46,15 +47,23 @@ def apply_avatar_outline(
     if not mask.any():
         raise RuntimeError("Für die Umrandung wurde kein Avatar im isolierten Render gefunden.")
     width = thickness_percent * base.width / 100.0
-    distances = distance_transform_edt(~mask if outside else mask)
-    valid = (~mask if outside else mask) & (distances <= width + 0.5)
+
+    # Wenn der Avatar ueber den Canvas-Rand hinausgeht, darf die Outline dort
+    # nicht als kuenstliche Linie am Rand kleben. Dazu wird die Silhouette mit
+    # 'edge' ueber den Rand hinaus verlaengert; die Berechnung laeuft auf der
+    # groesseren Maske und wird anschliessend auf das Originalbild zugeschnitten.
+    pad = int(math.ceil(width)) + 2
+    padded_mask = np.pad(mask, pad, mode="edge")
+    field = (~padded_mask if outside else padded_mask)
+    distances = distance_transform_edt(field)
+    valid = field & (distances <= width + 0.5)
     progress = np.clip((distances - 0.5) / max(width, 1e-6), 0.0, 1.0)
     fade = fade_start_percent / 100.0
     if fade >= 1.0:
         opacity = np.ones_like(progress)
     else:
         opacity = np.where(progress <= fade, 1.0, (1.0 - progress) / (1.0 - fade))
-    opacity = np.where(valid, opacity, 0.0)
+    opacity = np.where(valid, opacity, 0.0)[pad:-pad, pad:-pad]
 
     overlay_arr = np.zeros((base.height, base.width, 4), dtype=np.uint8)
     overlay_arr[:, :, :3] = color
