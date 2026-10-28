@@ -45,12 +45,40 @@ ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
   Roblox-Client zeigen diese Meshes die klassische Körpertextur, die aus
   `BodyColors` und Classic-Kleidung zusammengesetzt wird. Der Renderer
   malt diese klassische Körpertextur (`compose_r15_part_textures`) direkt
-  auf das Mesh: Die UVs des Assets passen nicht zu diesem Atlas, also
-  werden sie neu berechnet – jede Fläche wird über ihre Normale als
-  Front/Back/Left/Right/Top/Bottom klassifiziert und bekommt das passende
-  Tile des Atlas (`compute_part_uvs`), genau so wie Roblox die klassischen
-  Körperteile auf die Körpertextur legt. Ohne das bliebe nur die flache
-  `BodyColor` und die Teile wirkten braun.
+  auf das Mesh. Ohne das bliebe nur die flache `BodyColor` und die Teile
+  wirkten braun.
+  * **Warum nicht die UVs des Pakets?** Die UVs eines klassischen Pakets
+    liegen *nicht* im Raum des Classic-Templates. Gemessen am
+    „Roblox 2.0“-Paket (`27112025`): Das Front-Face des `LowerTorso`
+    belegt im Template den Bereich x 5–196, y 415–546 – also den
+    Limb-Bereich, nicht die Torso-Vorderansicht; das Front-Face des
+    `UpperTorso` belegt nur ein 90 × 56 px großes Teilstück der
+    Torso-Vorderansicht. Ein Abtasten des Templates mit diesen UVs würde
+    die Shirt-Grafik völlig zerrissen auf die Teile legen. Roblox legt die
+    Classic-Kleidung deshalb **je Fläche** auf: Jede Fläche des Meshs wird
+    über ihre Normale als Front/Back/Left/Right/Top/Bottom klassifiziert
+    und bekommt das passende Tile des Atlas (`compute_part_uvs`,
+    `_remap_part_uvs`). Belege: In Roblox' eigenem R15-Screenshot des
+    „Roblox 2.0“-Torsos (devforum 174204) steht das *vollständige*
+    Vorderpanel mittig auf der Brust – bei einer Projektion über die
+    Asset-UVs wäre nur ein Teilstück davon zu sehen. Genau diese
+    Flächen-Projektion macht die Grafik auch auf gerundeten
+    Paket-Geometrien „gestreckt“ – das entspricht dem Verhalten, das
+    Roblox selbst zeigt (devforum 4721459: „R15 stretches classic shirt
+    texture more than R6“).
+  * **Template-Aufteilung** – Die Rechtecke stammen aus dem offiziellen
+    Classic-Template (585 × 559, `Template-Shirts.png`): Torso
+    Front/Back 128 × 128, Seiten 64 × 128, UP/DOWN 128 × 64, Gliedmaßen
+    64 × 128 bzw. 64 × 64-Kappen. Die R15-Teilung des Torsos bei
+    96/32 px ist die gepunktete Linie im offiziellen Template (im
+    R15-Template `Template-Shirts-R15.png` an derselben Stelle zu messen);
+    sie passt zum Verhältnis des R15-Blocky-Rigs (`UpperTorso` 1.6 Studs
+    hoch, `LowerTorso` 0.4). Die Gliedmaßen (64/48/16 px) sind eine
+    Näherung an die Rig-Proportionen des R15-Arms (Oberarm 0.918,
+    Unterarm 0.760, Hand 0.275 Studs ≈ 60/50/18 px); das R15-Template
+    unterteilt den Arm in mehrere Biege-Bänder, die Roblox für die
+    klassischen R6-Pakete „in einem Stück“ auf die R15-Segmente legt.
+
 * **Kleidung** – Classic-Kleidung gehört nur zum klassischen Körper
   (Blocky-Rig). Ein ausgerüstetes Körperteil-Paket bringt seine eigene
   Textur mit und wird deshalb nicht zusätzlich mit der Kleidung
