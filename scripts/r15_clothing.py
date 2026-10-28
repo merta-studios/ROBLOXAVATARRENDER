@@ -155,7 +155,22 @@ def _face_layers(
     # LowerTorso zuerst die Hose und danach das Shirt (und ggf. das T-Shirt).
     if part_name in ("UpperTorso", "LowerTorso"):
         segment = _SEGMENT_BY_PART[part_name]
-        rect = CLOTHING_RECTS["torso"][face]
+        
+        # Top/Bottom-Faces am Torso sind die Verbindungsflächen zwischen Upper/Lower:
+        # - UpperTorso.Top = Schultern (Template.Top)
+        # - UpperTorso.Bottom = Verbindung zu LowerTorso (Template.Top, wegen Template-Fehler)
+        # - LowerTorso.Top = Verbindung zu UpperTorso (Template.Top, wegen Template-Fehler)
+        # - LowerTorso.Bottom = Hüfte (Template.Bottom)
+        if face == "Top":
+            rect = CLOTHING_RECTS["torso"]["Top"]
+        elif face == "Bottom":
+            if part_name == "UpperTorso":
+                rect = CLOTHING_RECTS["torso"]["Top"]  # Verbindung zu LowerTorso
+            else:  # LowerTorso
+                rect = CLOTHING_RECTS["torso"]["Bottom"]  # Hüfte
+        else:
+            rect = CLOTHING_RECTS["torso"][face]
+        
         effective_segment = None if face in ("Top", "Bottom") else segment
         layers: list[Image.Image] = []
         if part_name == "LowerTorso" and pants_img is not None:

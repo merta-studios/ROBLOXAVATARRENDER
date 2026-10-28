@@ -27,7 +27,6 @@ if bpy is not None:
         _prepare_custom_head_texture,
         _build_blender_mesh_from_rbx,
         _setup_studio_lighting_and_world,
-        _apply_avatar_outline,
     )
     from scripts.rbx_formats import MeshData
     from scripts.configure_blend_scene import (
@@ -98,23 +97,6 @@ class RenderRegressionTests(unittest.TestCase):
         world_outputs = [node for node in tree.nodes if node.type == "OUTPUT_WORLD"]
         self.assertTrue(world_outputs)
         self.assertTrue(any(link.to_node in world_outputs for link in tree.links))
-
-    def test_outline_uses_image_width_and_stays_outside_avatar(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            base_path = Path(tmp) / "base.png"
-            avatar_path = Path(tmp) / "avatar.png"
-            Image.new("RGBA", (20, 20), (0, 0, 0, 0)).save(base_path)
-            avatar = Image.new("RGBA", (20, 20), (0, 0, 0, 0))
-            ImageDraw.Draw(avatar).rectangle((7, 7, 12, 12), fill=(255, 0, 0, 255))
-            avatar.save(avatar_path)
-            _apply_avatar_outline(
-                base_path, avatar_path, thickness_percent=10, outside=True,
-                fade_start_percent=100, color=(255, 255, 255),
-            )
-            result = Image.open(base_path).convert("RGBA")
-        self.assertGreater(result.getpixel((6, 9))[3], 0)
-        self.assertEqual(result.getpixel((9, 9))[3], 0)
-        self.assertEqual(result.getpixel((4, 9))[3], 0)
 
     def test_opaque_face_background_keeps_head_skin_colored(self):
         """Deckender (schwarzer) Decal-Hintergrund darf die Kopfhaut nicht übermalen."""

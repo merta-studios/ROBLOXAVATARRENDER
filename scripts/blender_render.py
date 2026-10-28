@@ -11,7 +11,6 @@ import numpy as np
 from mathutils import Matrix, Vector
 from PIL import Image, ImageDraw
 
-from scripts.image_compositing import apply_avatar_outline as _apply_avatar_outline
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.roblox_opencloud import (
     AccessorySpec,
@@ -869,7 +868,6 @@ def render_avatar_scene(
     background_kind: str = "transparent",
     background_path: str | None = None,
     background_value: str = "transparent",
-    outline: dict | None = None,
     korblox: bool = False,
     headless: bool = False,
     korblox_asset: dict[str, Any] | None = None,
@@ -1084,31 +1082,3 @@ def render_avatar_scene(
 
     if not output_png.is_file() or output_png.stat().st_size == 0:
         raise RuntimeError(f"Blender hat keine Ausgabedatei unter '{output_png}' erzeugt.")
-
-    outline_cfg = outline or {}
-    thickness = float(outline_cfg.get("thickness_percent", 0))
-    if thickness > 0:
-        avatar_png = work_dir / "avatar_outline_source.png"
-        original_filepath = scene.render.filepath
-        original_hidden = background_plane.hide_render if background_plane is not None else None
-        try:
-            if background_plane is not None:
-                background_plane.hide_render = True
-            scene.render.filepath = str(avatar_png.resolve())
-            bpy.ops.render.render(write_still=True)
-        finally:
-            scene.render.filepath = original_filepath
-            if background_plane is not None and original_hidden is not None:
-                background_plane.hide_render = original_hidden
-        if not avatar_png.is_file() or avatar_png.stat().st_size == 0:
-            raise RuntimeError("Isolierter Avatar-Render für die Umrandung wurde nicht erzeugt.")
-        from scripts.render_config import normalize_color
-
-        _apply_avatar_outline(
-            output_png,
-            avatar_png,
-            thickness_percent=thickness,
-            outside=bool(outline_cfg.get("outside", True)),
-            fade_start_percent=float(outline_cfg.get("fade_start_percent", 0)),
-            color=normalize_color(str(outline_cfg.get("color", "white"))),
-        )
