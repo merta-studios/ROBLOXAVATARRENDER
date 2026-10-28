@@ -661,10 +661,10 @@ def render_classic_scene(
             obj = bpy.data.objects.new(f"BodyPart_{inventory_asset_type}", mesh)
             scene.collection.objects.link(obj)
             
-            # CFrame-Transformation anwenden (Position und Rotation aus dem Inventar)
-            cframe_matrix = _cframe_to_mat4(body_part.cframe)
-            blender_matrix = T_RBX_TO_BL @ cframe_matrix @ T_RBX_TO_BL
-            obj.matrix_world = Matrix(blender_matrix.tolist())
+            # CFrame-Transformation NICHT anwenden - die Mesh-Daten haben bereits die korrekte Position
+            # (CFrame in Roblox-Assets ist relativ zum Character-Root, nicht absolut)
+            # Stattdessen nur die Roblox-zu-Blender Koordinatentransformation anwenden
+            obj.matrix_world = Matrix(T_RBX_TO_BL.tolist())
             
             render_objects.append(obj)
             # Speichere das Objekt für alle Teil-Namen dieses Asset-Typs
