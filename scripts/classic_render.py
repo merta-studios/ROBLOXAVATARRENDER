@@ -711,7 +711,6 @@ def render_classic_scene(
     # Segmente behalten ihren offiziellen Blocky-Fallback und ihre Kleidung.
     official_parts = load_r15_blocky_rig()
     part_textures = getattr(bundle, "r15_part_textures", {}) or {}
-    overlays = getattr(bundle, "r15_clothing_overlays", {}) or {}
     body_parts = getattr(bundle, "body_parts", {}) or {}
     is_headless = getattr(bundle.head, "kind", "") == "headless"
 
@@ -729,8 +728,14 @@ def render_classic_scene(
             body_objects[name] = _create_r15_part(part, material, scene, render_objects)
             continue
 
+        # Ein ausgerüstetes Koerperteil-Asset bringt seine eigene Textur mit.
+        # Classic-Kleidung liegt nur auf dem klassischen Koerper (Blocky-Rig);
+        # ein Paket wie "Roblox 2.0" zeigt die Kleidung nur, weil seine Meshes
+        # auf die klassische Koerpertextur gemappt sind, in die der Client
+        # BodyColors und Kleidung einrechnet. Ein zusaetzliches Projizieren
+        # der Kleidung auf die UVs des Assets waere daher doppelt und falsch.
         body_objects[name] = _create_inventory_part(
-            part, body_part, srgb, material_finish, overlays.get(name), scene, render_objects
+            part, body_part, srgb, material_finish, None, scene, render_objects
         )
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.

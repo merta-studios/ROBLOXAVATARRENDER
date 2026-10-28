@@ -921,6 +921,7 @@ def _character_mesh_texture(roots: list[RbxNode]) -> int | None:
 def _load_r15_body_segments(
     client: Any, roots: list[RbxNode], asset_id: int, asset_type_id: int,
     names: tuple[str, ...], work_dir: Path,
+    fallback_texture_path: str | None = None,
 ) -> dict[str, BodyPartSpec]:
     """Laedt benannte R15-Segmente aus einem Koerperteil-Asset.
 
@@ -1007,7 +1008,31 @@ def _load_r15_body_segments(
                 except Exception as exc:
                     print(f"[body_part] Textur {tex_id} fuer {name} nicht verfuegbar: {exc}")
                     texture_path = None
+            if texture_path is None and fallback_texture_path:
+                # Klassische Pakete ("Roblox 2.0") bringen keine eigene Textur
+                # mit: Ihre Meshes sind auf die klassische R6-Koerpertextur
+                # gemappt, die der Client aus BodyColors und Classic-Kleidung
+                # zusammensetzt. Ohne sie bliebe nur die flache BodyColor.
+                texture_path = fallback_texture_path
+                print(
+                    f"[body_part] {name} von Asset {asset_id} nutzt die klassische "
+                    "Koerpertextur (BodyColors + Classic-Kleidung)."
+                )
             part_cframe = translate_cframe(_absolute_cframe(node), align_offset)
+            try:
+                uvs = mesh.uvs or []
+                uv_bounds = [
+                    round(min(u for u, _ in uvs), 4),
+                    round(min(v for _, v in uvs), 4),
+                    round(max(u for u, _ in uvs), 4),
+                    round(max(v for _, v in uvs), 4),
+                ] if uvs else None
+                _DIAGNOSTICS.setdefault("body_parts", []).append({
+                    "asset_id": asset_id, "name": name, "uv": uv_bounds,
+                    "texture": tex_id, "fallback": bool(texture_path and not tex_id),
+                })
+            except Exception:  # pragma: no cover - Diagnose darf nie den Render brechen
+                pass
             result[name] = BodyPartSpec(
                 asset_id=asset_id, asset_type_id=asset_type_id, mesh=mesh,
                 mesh_scale=scale, mesh_offset=offset,
@@ -1200,7 +1225,10 @@ def load_avatar_bundle(
             aid = int(item["id"])
             try:
                 roots = parse_rbx_model(client.fetch_asset_bytes(aid))
-                body_parts.update(_load_r15_body_segments(client, roots, aid, atype_id, names, work_dir))
+                body_parts.update(_load_r15_body_segments(
+                    client, roots, aid, atype_id, names, work_dir,
+                    fallback_texture_path=body_tex_path,
+                ))
             except Exception as exc:
                 print(f"[body_part] Asset {aid} konnte nicht geladen werden: {exc}")
 
