@@ -62,6 +62,11 @@ def _diag_dump_nodes(roots: list[RbxNode]) -> list[dict[str, Any]]:
         values = tuple(float(v) for v in cf) if cf and len(cf) == 12 else IDENTITY_CFRAME
         pos = (parent_pos[0] + values[0], parent_pos[1] + values[1], parent_pos[2] + values[2])
         entry: dict[str, Any] = {"p": path, "c": node.class_name, "abs": [round(v, 4) for v in pos]}
+        if node.class_name in ("MeshPart", "CharacterMesh", "SurfaceAppearance"):
+            entry["props"] = {
+                key: _diag_value(val) for key, val in node.props.items()
+                if key not in ("CFrame", "Size", "InitialSize")
+            }
         for key in (
             "Size", "InitialSize", "MeshSize", "Transparency",
             "Color", "BrickColor", "TextureID", "TextureId", "TextureContent",
