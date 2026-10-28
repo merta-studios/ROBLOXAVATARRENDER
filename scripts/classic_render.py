@@ -45,6 +45,7 @@ from scripts.r15_clothing import compute_part_uvs
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
 from scripts.roblox_opencloud import AvatarBundle
+from scripts.blender_render import _build_blender_mesh_from_rbx
 
 # Vertikale Welt-Spanne der Ortho-Kamera. Die Abstaende sind Prozent der
 # Avatar-Hoehe und werden relativ zu diesem Wert berechnet.
@@ -129,6 +130,16 @@ DEFAULT_BODY_RGB: dict[str, tuple[int, int, int]] = {
     "leftArm": (245, 205, 48),
     "rightLeg": (164, 189, 71),
     "leftLeg": (164, 189, 71),
+}
+
+# Mapping von Asset-Typ zu R15-Teilnamen
+ASSET_TYPE_TO_PART_NAMES: dict[int, tuple[str, ...]] = {
+    17: ("Head",),
+    27: ("UpperTorso", "LowerTorso"),
+    28: ("RightUpperArm", "RightLowerArm", "RightHand"),
+    29: ("LeftUpperArm", "LeftLowerArm", "LeftHand"),
+    30: ("LeftUpperLeg", "LeftLowerLeg", "LeftFoot"),
+    31: ("RightUpperLeg", "RightLowerLeg", "RightFoot"),
 }
 
 
@@ -564,27 +575,111 @@ def render_classic_scene(
     accessory_parents: list[tuple[Any, str]] = []
     group_empties: dict[str, Any] = {}
 
-    # 1. Offizieller Standard-R15-Blocky-Rig: 15 Meshes mit Classic-Clothing.
-    #    Fehlende Koerperteil-Assets aus dem Inventar werden so exakt durch
-    #    Roblox' Standardteile ersetzt, nicht durch einfache Quader. Jedes Teil
-    #    hat seine eigene 3x2-Textur mit Shirt/Pants/T-Shirt bzw. Face-Decal.
-    #    Bei headless (bundle.head.kind == "headless") wird der Kopf nicht gerendert.
+    # 1. Körperteile rendern:
+    #    - Für vorhandene Teile aus bundle.body_parts: Inventar-Mesh verwenden
+    #    - Für fehlende Teile: blocky rig als Fallback
+    #    - Scaling aus bundle.scales anwenden
+    #    - Bei headless (bundle.head.kind == "headless") wird der Kopf nicht gerendert.
     official_parts = load_r15_blocky_rig()
     part_textures = getattr(bundle, "r15_part_textures", {}) or {}
+    body_parts = getattr(bundle, "body_parts", {}) or {}
     is_headless = getattr(bundle.head, "kind", "") == "headless"
+    
+    # Scaling-Faktoren aus bundle.scales
+    scales = getattr(bundle, "scales", {}) or {}
+    scale_height = float(scales.get("height", 1.0))
+    scale_width = float(scales.get("width", 1.0))
+    scale_depth = float(scales.get("depth", 1.0))
+    scale_head = float(scales.get("head", 1.0))
+    
+    # Bestimme welche Asset-Typen im Inventar sind
+    available_asset_types = set(body_parts.keys())
     
     for name, part in official_parts.items():
         # Headless: keinen Kopf rendern
         if name == "Head" and is_headless:
             continue
-            
-        rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
-        srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
-        texture_path = part_textures.get(name)
-        material = _solid_material(
-            f"Classic{name}Mat", srgb, material_finish, texture_path=texture_path
+        
+        # Prüfe ob dieses Teil aus dem Inventar kommt
+        inventory_asset_type = None
+        for asset_type, part_names in ASSET_TYPE_TO_PART_NAMES.items():
+            if name in part_names:
+                inventory_asset_type = asset_type
+                break
+        
+        use_inventory_mesh = (
+            inventory_asset_type is not None 
+            and inventory_asset_type in available_asset_types
         )
-        body_objects[name] = _create_r15_part(part, material, scene, render_objects)
+        
+        if use_inventory_mesh:
+            # Inventar-Mesh verwenden
+            body_part = body_parts[inventory_asset_type]
+            mesh_data = body_part.mesh
+            
+            # Scaling anwenden
+            if name == "Head":
+                eff_scale = (
+                    body_part.mesh_scale[0] * scale_head,
+                    body_part.mesh_scale[1] * scale_head,
+                    body_part.mesh_scale[2] * scale_head,
+                )
+            else:
+                eff_scale = (
+                    body_part.mesh_scale[0] * scale_width,
+                    body_part.mesh_scale[1] * scale_height,
+                    body_part.mesh_scale[2] * scale_depth,
+                )
+            
+            # Mesh erstellen
+            mesh = _build_blender_mesh_from_rbx(
+                f"{name}Mesh",
+                mesh_data,
+                eff_scale,
+                body_part.mesh_offset,
+            )
+            
+            # Material
+            material = _solid_material(
+                f"Classic{name}Mat",
+                body_part.base_color,
+                material_finish,
+                texture_path=body_part.texture_path,
+                tint_srgb=body_part.tint_color,
+                alpha=1.0 - body_part.transparency,
+            )
+            mesh.materials.append(material)
+            
+            obj = bpy.data.objects.new(name, mesh)
+            scene.collection.objects.link(obj)
+            render_objects.append(obj)
+            body_objects[name] = obj
+        else:
+            # Blocky rig als Fallback verwenden
+            rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
+            srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
+            texture_path = part_textures.get(name)
+            material = _solid_material(
+                f"Classic{name}Mat", srgb, material_finish, texture_path=texture_path
+            )
+            body_objects[name] = _create_r15_part(part, material, scene, render_objects)
+    
+    # Kopf-Position korrigieren: Der blocky-rig-Kopf überlappt leicht mit dem Torso.
+    # Verschiebe den Kopf nach oben, sodass er genau auf dem Torso sitzt.
+    if "Head" in body_objects and "UpperTorso" in body_objects:
+        head_obj = body_objects["Head"]
+        torso_obj = body_objects["UpperTorso"]
+        
+        # Berechne die Oberkante des Torso und die Unterkante des Kopfes
+        torso_bbox = _world_bbox([torso_obj])
+        head_bbox = _world_bbox([head_obj])
+        if torso_bbox is not None and head_bbox is not None:
+            torso_top = torso_bbox[1][2]
+            head_bottom = head_bbox[0][2]
+            offset_z = torso_top - head_bottom
+            
+            # Verschiebe den Kopf nach oben
+            head_obj.location.z += offset_z
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.
     accessory_count = 0
