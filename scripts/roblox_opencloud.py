@@ -50,19 +50,28 @@ def _diag_value(value: Any) -> Any:
 
 def _diag_dump_nodes(roots: list[RbxNode]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+
+    def walk(node: RbxNode, path: str, parent_pos: tuple[float, float, float]) -> None:
+        cf = node.prop("CFrame", default=IDENTITY_CFRAME)
+        values = tuple(float(v) for v in cf) if cf and len(cf) == 12 else IDENTITY_CFRAME
+        pos = (parent_pos[0] + values[0], parent_pos[1] + values[1], parent_pos[2] + values[2])
+        entry: dict[str, Any] = {"p": path, "c": node.class_name, "abs": [round(v, 4) for v in pos]}
+        for key in (
+            "Size", "InitialSize", "MeshSize", "Transparency",
+            "Color", "BrickColor", "TextureID", "TextureId", "TextureContent",
+            "MeshId", "MeshContent", "ColorMap", "ColorMapContent",
+            "AlphaMode", "PrimaryPart", "Scale", "Offset", "MeshType",
+            "Value", "BodyPart", "BaseTextureId", "OverrideTextureId",
+        ):
+            val = node.prop(key)
+            if val is not None:
+                entry[key] = _diag_value(val)
+        out.append(entry)
+        for child in node.children:
+            walk(child, f"{path}/{child.name}", pos)
+
     for root in roots:
-        for node in [root] + root.descendants():
-            entry: dict[str, Any] = {"n": node.name, "c": node.class_name}
-            for key in (
-                "CFrame", "Size", "InitialSize", "MeshSize", "Transparency",
-                "Color", "BrickColor", "TextureID", "TextureId", "TextureContent",
-                "MeshId", "MeshContent", "ColorMap", "ColorMapContent",
-                "AlphaMode", "PrimaryPart", "Scale", "Offset", "MeshType",
-            ):
-                val = node.prop(key)
-                if val is not None:
-                    entry[key] = _diag_value(val)
-            out.append(entry)
+        walk(root, root.name, (0.0, 0.0, 0.0))
     return out
 
 
