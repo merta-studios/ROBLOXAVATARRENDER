@@ -40,7 +40,7 @@ except ImportError:  # pragma: no cover - lokal ohne Blender-Systembibliotheken
 
 from scripts.gfx_layout import compute_spacing_transform
 from scripts.image_compositing import compose_background
-from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig
+from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig, part_center
 from scripts.r15_clothing import compute_part_uvs
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
@@ -292,6 +292,7 @@ def _solid_material(
     texture_path: str | None = None,
     tint_srgb: tuple[float, float, float] = (1.0, 1.0, 1.0),
     alpha: float = 1.0,
+    clothing_path: str | None = None,
 ) -> Any:
     """Erzeugt ein Principled-Material (Glossy/Matt) ohne Rig-Abhaengigkeit."""
     mat = bpy.data.materials.new(name)
@@ -326,6 +327,9 @@ def _solid_material(
         image.colorspace_settings.name = "sRGB"
         tex.image = image
         tex.interpolation = "Smart"
+        uv = tree.nodes.new("ShaderNodeUVMap")
+        uv.uv_map = "UVMap"
+        tree.links.new(uv.outputs["UV"], tex.inputs["Vector"])
         tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
         tree.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
         # Nur echte Alpha-Texturen muessen blended rendern; die neuen
@@ -334,7 +338,64 @@ def _solid_material(
             mat.surface_render_method = "BLENDED"
     else:
         bsdf.inputs["Base Color"].default_value = (*linear, 1.0)
+    if clothing_path and Path(clothing_path).is_file():
+        overlay = tree.nodes.new("ShaderNodeTexImage")
+        overlay.image = bpy.data.images.load(str(Path(clothing_path).resolve()), check_existing=True)
+        uv = tree.nodes.new("ShaderNodeUVMap")
+        uv.uv_map = "ClothingUV"
+        tree.links.new(uv.outputs["UV"], overlay.inputs["Vector"])
+        mix = tree.nodes.new("ShaderNodeMixRGB")
+        mix.blend_type = "MIX"
+        base = bsdf.inputs["Base Color"]
+        if base.is_linked:
+            tree.links.new(base.links[0].from_socket, mix.inputs[1])
+        else:
+            mix.inputs[1].default_value = base.default_value
+        tree.links.new(overlay.outputs["Color"], mix.inputs[2])
+        tree.links.new(overlay.outputs["Alpha"], mix.inputs[0])
+        tree.links.new(mix.outputs["Color"], base)
     return mat
+
+
+def _add_clothing_uv(mesh: Any, part_name: str, color_key: str) -> None:
+    """Projektion fuer Classic-Kleidung ohne die Original-UVs zu ueberschreiben."""
+    part = R15Part(
+        name=part_name,
+        vertices=[tuple(v.co) for v in mesh.vertices],
+        faces=[tuple(p.vertices) for p in mesh.polygons],
+        uvs=[], color_key=color_key,
+    )
+    uvs = compute_part_uvs(part)
+    layer = mesh.uv_layers.new(name="ClothingUV")
+    for loop in mesh.loops:
+        layer.data[loop.index].uv = uvs[loop.index]
+
+
+def _create_inventory_part(
+    part: R15Part, body_part: Any, srgb: tuple[float, float, float],
+    finish: str, clothing_path: str | None, scene: Any, render_objects: list[Any],
+) -> Any:
+    # Der Mesh-Builder konvertiert bereits Roblox -> Blender. Eine zweite
+    # Achsentransformation wuerde die Teile auf den Boden kippen.
+    mesh = _build_blender_mesh_from_rbx(
+        f"{part.name}Mesh", body_part.mesh, body_part.mesh_scale, body_part.mesh_offset
+    )
+    _add_clothing_uv(mesh, part.name, part.color_key)
+    material = _solid_material(
+        f"Classic{part.name}Mat", srgb, finish,
+        texture_path=body_part.texture_path,
+        tint_srgb=body_part.tint_color,
+        alpha=1.0 - body_part.transparency,
+        clothing_path=clothing_path,
+    )
+    mesh.materials.append(material)
+    obj = bpy.data.objects.new(part.name, mesh)
+    scene.collection.objects.link(obj)
+    # Asset-CFrames sind Studio-Speicherpositionen und keine Avatar-Pose.
+    # Die lokalen Mesh-Urspruenge gehoeren an die Zentren des Ziel-Rigs.
+    obj.location = part_center(part)
+    render_objects.append(obj)
+    return obj
 
 
 def _create_r15_part(
@@ -575,110 +636,31 @@ def render_classic_scene(
     accessory_parents: list[tuple[Any, str]] = []
     group_empties: dict[str, Any] = {}
 
-    # 1. Körperteile rendern:
-    #    - Für vorhandene Teile aus bundle.body_parts: Inventar-Mesh verwenden
-    #    - Für fehlende Teile: blocky rig als Fallback
-    #    - Scaling aus bundle.scales anwenden
-    #    - Bei headless (bundle.head.kind == "headless") wird der Kopf nicht gerendert.
+    # Jedes Inventar-Mesh ist lokal zu genau einem R15-Segment. Fehlende
+    # Segmente behalten ihren offiziellen Blocky-Fallback und ihre Kleidung.
     official_parts = load_r15_blocky_rig()
     part_textures = getattr(bundle, "r15_part_textures", {}) or {}
+    overlays = getattr(bundle, "r15_clothing_overlays", {}) or {}
     body_parts = getattr(bundle, "body_parts", {}) or {}
     is_headless = getattr(bundle.head, "kind", "") == "headless"
-    
-    # Scaling-Faktoren aus bundle.scales
-    scales = getattr(bundle, "scales", {}) or {}
-    scale_height = float(scales.get("height", 1.0))
-    scale_width = float(scales.get("width", 1.0))
-    scale_depth = float(scales.get("depth", 1.0))
-    scale_head = float(scales.get("head", 1.0))
-    
-    # Bestimme welche Asset-Typen im Inventar sind
-    available_asset_types = set(body_parts.keys())
-    
+
     for name, part in official_parts.items():
-        # Headless: keinen Kopf rendern
         if name == "Head" and is_headless:
             continue
-        
-        # Prüfe ob dieses Teil aus dem Inventar kommt
-        inventory_asset_type = None
-        for asset_type, part_names in ASSET_TYPE_TO_PART_NAMES.items():
-            if name in part_names:
-                inventory_asset_type = asset_type
-                break
-        
-        use_inventory_mesh = (
-            inventory_asset_type is not None 
-            and inventory_asset_type in available_asset_types
-        )
-        
-        if use_inventory_mesh:
-            # Inventar-Mesh verwenden
-            body_part = body_parts[inventory_asset_type]
-            
-            # WICHTIG: Ein R15-Body-Part-Asset enthält bereits alle Teile als ein Mesh.
-            # Render es nur einmal (für den ersten Teil-Namen), nicht für jeden Teil separat.
-            part_names = ASSET_TYPE_TO_PART_NAMES[inventory_asset_type]
-            if name != part_names[0]:
-                # Dies ist nicht der erste Teil - überspringe (wurde bereits gerendert)
-                continue
-            
-            mesh_data = body_part.mesh
-            
-            # Scaling anwenden
-            if name == "Head":
-                eff_scale = (
-                    body_part.mesh_scale[0] * scale_head,
-                    body_part.mesh_scale[1] * scale_head,
-                    body_part.mesh_scale[2] * scale_head,
-                )
-            else:
-                eff_scale = (
-                    body_part.mesh_scale[0] * scale_width,
-                    body_part.mesh_scale[1] * scale_height,
-                    body_part.mesh_scale[2] * scale_depth,
-                )
-            
-            # Mesh erstellen
-            mesh = _build_blender_mesh_from_rbx(
-                f"{inventory_asset_type}Mesh",
-                mesh_data,
-                eff_scale,
-                body_part.mesh_offset,
-            )
-            
-            # Material
-            material = _solid_material(
-                f"Classic{inventory_asset_type}Mat",
-                body_part.base_color,
-                material_finish,
-                texture_path=body_part.texture_path,
-                tint_srgb=body_part.tint_color,
-                alpha=1.0 - body_part.transparency,
-            )
-            mesh.materials.append(material)
-            
-            obj = bpy.data.objects.new(f"BodyPart_{inventory_asset_type}", mesh)
-            scene.collection.objects.link(obj)
-            
-            # CFrame-Transformation NICHT anwenden - die Mesh-Daten haben bereits die korrekte Position
-            # (CFrame in Roblox-Assets ist relativ zum Character-Root, nicht absolut)
-            # Stattdessen nur die Roblox-zu-Blender Koordinatentransformation anwenden
-            obj.matrix_world = Matrix(T_RBX_TO_BL.tolist())
-            
-            render_objects.append(obj)
-            # Speichere das Objekt für alle Teil-Namen dieses Asset-Typs
-            for part_name in part_names:
-                body_objects[part_name] = obj
-        else:
-            # Blocky rig als Fallback verwenden
-            rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
-            srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
+        rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
+        srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
+        body_part = body_parts.get(name)
+        if body_part is None:
             texture_path = part_textures.get(name)
             material = _solid_material(
                 f"Classic{name}Mat", srgb, material_finish, texture_path=texture_path
             )
             body_objects[name] = _create_r15_part(part, material, scene, render_objects)
+            continue
+
+        body_objects[name] = _create_inventory_part(
+            part, body_part, srgb, material_finish, overlays.get(name), scene, render_objects
+        )
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.
     accessory_count = 0
@@ -714,30 +696,6 @@ def render_classic_scene(
         render_objects.append(obj)
         accessory_parents.append((obj, _accessory_group(acc)))
         accessory_count += 1
-
-    # 2b. Kopf-Position korrigieren: Der blocky-rig-Kopf überlappt leicht mit dem Torso.
-    # Verschiebe den Kopf nach oben, sodass er genau auf dem Torso sitzt.
-    # Auch Accessoires auf dem Kopf müssen mit verschoben werden.
-    head_offset_z = 0.0
-    if "Head" in body_objects and "UpperTorso" in body_objects:
-        head_obj = body_objects["Head"]
-        torso_obj = body_objects["UpperTorso"]
-        
-        # Berechne die Oberkante des Torso und die Unterkante des Kopfes
-        torso_bbox = _world_bbox([torso_obj])
-        head_bbox = _world_bbox([head_obj])
-        if torso_bbox is not None and head_bbox is not None:
-            torso_top = torso_bbox[1][2]
-            head_bottom = head_bbox[0][2]
-            head_offset_z = torso_top - head_bottom
-            
-            # Verschiebe den Kopf nach oben
-            head_obj.location.z += head_offset_z
-            
-            # Verschiebe auch Accessoires auf dem Kopf
-            for acc_obj, group_name in accessory_parents:
-                if group_name == "Head":
-                    acc_obj.location.z += head_offset_z
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote") and classic_emote is not None:

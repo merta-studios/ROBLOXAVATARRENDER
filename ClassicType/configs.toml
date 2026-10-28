@@ -12,7 +12,9 @@ background = "transparent"
 material = "Glossy"
 
 # Classic-Shirt, -Hose, -T-Shirt und Face-Decal werden automatisch als
-# R15-Teiltexturen auf den offiziellen Blocky-Rig gelegt (scripts/r15_clothing.py).
+# R15-Teiltexturen auf Körpersegmente projiziert (scripts/r15_clothing.py).
+# Individuelle R15-Meshes nutzen ihre eigenen Texturen; fehlende Segmente
+# fallen einzeln auf den offiziellen Blocky-Rig zurück.
 # Das Shirt liegt dabei auf Ober- und Untertorso; bei einem Avatar, der ueber
 # den Bildrand hinausgeht, wird die Outline nicht als Randlinie gezeichnet.
 

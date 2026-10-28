@@ -100,6 +100,11 @@ class R15Part:
     color_key: str
 
 
+def part_center(part: R15Part) -> tuple[float, float, float]:
+    """Mittelpunkt eines Segments im Welt-Koordinatensystem des Standardrigs."""
+    return tuple((min(v[i] for v in part.vertices) + max(v[i] for v in part.vertices)) / 2 for i in range(3))
+
+
 def _read_rig_data(path: Path | None = None) -> dict[str, Any]:
     path = Path(path or RIG_DATA_PATH)
     if not path.is_file():

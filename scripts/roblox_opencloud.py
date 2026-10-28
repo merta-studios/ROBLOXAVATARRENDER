@@ -16,6 +16,7 @@ import zstandard
 from PIL import Image, ImageDraw
 
 from scripts.brick_colors import brick_color_to_rgb, hex_to_rgb
+from scripts.r15_blocky_rig import BODY_PART_ASSET_TYPES
 from scripts.r15_clothing import (
     CLOTHING_RECTS,
     compose_r15_part_textures,
@@ -119,7 +120,8 @@ class AvatarBundle:
     r15_part_textures: dict[str, str] = field(default_factory=dict)
     # ClassicType: Körperteile aus dem Inventar (Asset-Typen 17, 27-31).
     # Nur für fehlende Teile wird der blocky rig als Fallback verwendet.
-    body_parts: dict[int, BodyPartSpec] = field(default_factory=dict)
+    body_parts: dict[str, BodyPartSpec] = field(default_factory=dict)
+    r15_clothing_overlays: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -768,6 +770,62 @@ def _compute_meshpart_scale(node: RbxNode, mesh: MeshData) -> tuple[float, float
     return (sx, sy, sz)
 
 
+def _load_r15_body_segments(
+    client: Any, roots: list[RbxNode], asset_id: int, asset_type_id: int,
+    names: tuple[str, ...], work_dir: Path,
+) -> dict[str, BodyPartSpec]:
+    """Laedt benannte R15-Segmente, bevorzugt ArtistIntent vor Fixed und nie R6."""
+    candidates: dict[str, tuple[int, RbxNode]] = {}
+
+    def visit(node: RbxNode, context: str = "") -> None:
+        marker = node.name.casefold()
+        if marker in ("r6", "r15artistintent", "r15fixed", "r15"):
+            context = marker
+        if context != "r6" and node.name in names and node.class_name in ("MeshPart", "Part"):
+            priority = {"r15artistintent": 3, "r15fixed": 2, "r15": 2, "": 1}.get(context, 1)
+            if node.name not in candidates or priority > candidates[node.name][0]:
+                candidates[node.name] = (priority, node)
+        for child in node.children:
+            visit(child, context)
+
+    for root in roots:
+        visit(root)
+    result: dict[str, BodyPartSpec] = {}
+    for name, (_, node) in candidates.items():
+        try:
+            sm = node.find_first_child_of_class("SpecialMesh") if node.class_name == "Part" else None
+            source = sm or node
+            mid = extract_asset_id(source.prop("MeshId", "MeshContent"))
+            if not mid:
+                continue
+            mesh = parse_rbx_mesh(client.fetch_asset_bytes(mid))
+            if not mesh.positions or not mesh.faces:
+                continue
+            scale = _compute_meshpart_scale(node, mesh) if sm is None else tuple(float(v) for v in sm.prop("Scale", default=(1, 1, 1)))
+            offset = (0.0, 0.0, 0.0) if sm is None else tuple(float(v) for v in sm.prop("Offset", default=(0, 0, 0)))
+            sa = node.find_first_child_of_class("SurfaceAppearance")
+            tex_id = extract_asset_id(sa.prop("ColorMap", "ColorMapContent")) if sa else None
+            if not tex_id:
+                tex_id = extract_asset_id(source.prop("TextureID", "TextureId", "TextureContent"))
+            texture_path = None
+            if tex_id:
+                try:
+                    texture_path = str(work_dir / f"bodypart_{asset_id}_{name}_{tex_id}.png")
+                    client.fetch_image(tex_id).save(texture_path, format="PNG")
+                except Exception as exc:
+                    print(f"[body_part] Textur {tex_id} fuer {name} nicht verfuegbar: {exc}")
+                    texture_path = None
+            result[name] = BodyPartSpec(
+                asset_id=asset_id, asset_type_id=asset_type_id, mesh=mesh,
+                mesh_scale=scale, mesh_offset=offset,
+                transparency=float(node.prop("Transparency", default=0.0) or 0.0),
+                texture_path=texture_path,
+            )
+        except Exception as exc:
+            print(f"[body_part] Segment {name} von {asset_id} konnte nicht geladen werden: {exc}")
+    return result
+
+
 def load_avatar_bundle(
     username: str,
     api_key: str,
@@ -845,7 +903,11 @@ def load_avatar_bundle(
     # 2b. ClassicType: pro R15-Teil eine passende Classic-Clothing-Textur.
     #     Der R6-Atlas oben bleibt unveraendert fuer HearthandsType.
     r15_part_textures: dict[str, str] = {}
+    r15_clothing_overlays: dict[str, str] = {}
     if gfx_type == "ClassicType":
+        r15_clothing_overlays = compose_r15_part_textures(
+            body_colors, shirt_img, pants_img, tshirt_img, face_img, work_dir, transparent_base=True
+        )
         r15_part_textures = compose_r15_part_textures(
             body_colors, shirt_img, pants_img, tshirt_img, face_img, work_dir
         )
@@ -930,139 +992,21 @@ def load_avatar_bundle(
                     head_spec.kind = "custom_mesh"
                     head_spec.mesh = mdata
 
-    # 3b. ClassicType: Körperteile aus dem Inventar laden (Asset-Typen 17, 27-31)
-    # Nur für ClassicType relevant; für fehlende Teile wird der blocky rig als Fallback verwendet.
-    body_parts: dict[int, BodyPartSpec] = {}
+    # Jedes R15-Segment besitzt ein eigenes Mesh und eigene Materialdaten.
+    # Fehler einzelner Segmente duerfen die uebrigen nicht unterdruecken.
+    body_parts: dict[str, BodyPartSpec] = {}
     if gfx_type == "ClassicType":
-        body_part_asset_types = {17, 27, 28, 29, 30, 31}  # Head, Torso, RightArm, LeftArm, LeftLeg, RightLeg
         for item in assets:
             atype_id = int((item.get("assetType") or {}).get("id") or 0)
-            if atype_id not in body_part_asset_types:
+            names = ("Head",) if atype_id == 17 else BODY_PART_ASSET_TYPES.get(atype_id, ())
+            if not names:
                 continue
-            
             aid = int(item["id"])
             try:
-                raw_part = client.fetch_asset_bytes(aid)
-                roots = parse_rbx_model(raw_part)
-                all_nodes = [n for r in roots for n in ([r] + r.descendants())]
-                
-                # MeshPart oder SpecialMesh finden
-                mesh_part = next((n for n in all_nodes if n.class_name == "MeshPart"), None)
-                special_mesh = next((n for n in all_nodes if n.class_name == "SpecialMesh"), None)
-                
-                mesh_data: MeshData | None = None
-                mesh_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
-                mesh_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
-                transparency = 0.0
-                base_color: tuple[float, float, float] = (0.8, 0.8, 0.8)
-                texture_path: str | None = None
-                
-                if mesh_part is not None:
-                    mid = extract_asset_id(mesh_part.prop("MeshId", "MeshContent"))
-                    if mid:
-                        mesh_data = parse_rbx_mesh(client.fetch_asset_bytes(mid))
-                        mesh_scale = _compute_meshpart_scale(mesh_part, mesh_data)
-                        transparency = float(mesh_part.prop("Transparency", default=0.0) or 0.0)
-                        
-                        # SurfaceAppearance für Textur
-                        sa = mesh_part.find_first_child_of_class("SurfaceAppearance")
-                        if sa is not None:
-                            tex_id = extract_asset_id(sa.prop("ColorMap", "ColorMapContent"))
-                            if tex_id:
-                                timg = client.fetch_image(tex_id)
-                                texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
-                                timg.save(texture_path, format="PNG")
-                                print(f"[body_part] Textur aus SurfaceAppearance geladen für Asset {aid}: {tex_id}")
-                        else:
-                            # Fallback 1: TextureID direkt auf dem MeshPart
-                            tex_id = extract_asset_id(mesh_part.prop("TextureID", "TextureId", "TextureContent"))
-                            if tex_id:
-                                timg = client.fetch_image(tex_id)
-                                texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
-                                timg.save(texture_path, format="PNG")
-                                print(f"[body_part] Textur aus TextureID geladen für Asset {aid}: {tex_id}")
-                            else:
-                                # Fallback 2: Decal oder Texture als Child
-                                decal = mesh_part.find_first_child_of_class("Decal")
-                                if decal is None:
-                                    decal = mesh_part.find_first_child_of_class("Texture")
-                                if decal is not None:
-                                    tex_id = extract_asset_id(decal.prop("Texture", "TextureContent"))
-                                    if tex_id:
-                                        timg = client.fetch_image(tex_id)
-                                        texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
-                                        timg.save(texture_path, format="PNG")
-                                        print(f"[body_part] Textur aus Decal/Texture geladen für Asset {aid}: {tex_id}")
-                                    else:
-                                        print(f"[body_part] KEINE Textur gefunden für Asset {aid}")
-                                else:
-                                    print(f"[body_part] KEINE Textur gefunden für Asset {aid}")
-                        
-                        # Base color (Color3uint8 ist 0-255, muss zu 0-1 konvertiert werden)
-                        col_raw = mesh_part.prop("Color", "Color3uint8")
-                        if isinstance(col_raw, tuple) and len(col_raw) == 3:
-                            # Prüfe ob die Werte im 0-1 Bereich sind (alle <= 1.0)
-                            if all(v <= 1.0 for v in col_raw):
-                                # Werte sind bereits 0-1
-                                base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
-                            else:
-                                # Werte sind 0-255, konvertiere zu 0-1
-                                base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
-                
-                elif special_mesh is not None:
-                    mid = extract_asset_id(special_mesh.prop("MeshId", "MeshContent"))
-                    if mid:
-                        mesh_data = parse_rbx_mesh(client.fetch_asset_bytes(mid))
-                        sc = special_mesh.prop("Scale", default=(1.0, 1.0, 1.0))
-                        of = special_mesh.prop("Offset", default=(0.0, 0.0, 0.0))
-                        mesh_scale = (float(sc[0]), float(sc[1]), float(sc[2]))
-                        mesh_offset = (float(of[0]), float(of[1]), float(of[2]))
-                        
-                        tex_id = extract_asset_id(special_mesh.prop("TextureId", "TextureID", "TextureContent"))
-                        if tex_id:
-                            timg = client.fetch_image(tex_id)
-                            texture_path = str(work_dir / f"bodypart_{aid}_tex_{tex_id}.png")
-                            timg.save(texture_path, format="PNG")
-                        
-                        # Base color für SpecialMesh (aus parent Handle oder Part)
-                        parent_node = next((n for n in all_nodes if n.class_name in ("Part", "MeshPart")), None)
-                        if parent_node is not None:
-                            col_raw = parent_node.prop("Color", "Color3uint8")
-                            if isinstance(col_raw, tuple) and len(col_raw) == 3:
-                                if all(v <= 1.0 for v in col_raw):
-                                    base_color = (float(col_raw[0]), float(col_raw[1]), float(col_raw[2]))
-                                else:
-                                    base_color = (col_raw[0] / 255.0, col_raw[1] / 255.0, col_raw[2] / 255.0)
-                
-                if mesh_data is None:
-                    continue
-                
-                # CFrame aus dem Model extrahieren (falls vorhanden)
-                cframe = IDENTITY_CFRAME
-                for node in all_nodes:
-                    cf = node.prop("CFrame")
-                    if cf and len(cf) == 12:
-                        cframe = tuple(float(x) for x in cf)
-                        print(f"[body_part] CFrame gefunden für Asset {aid}: {cframe[:3]}...")
-                        break
-                else:
-                    print(f"[body_part] KEINE CFrame gefunden für Asset {aid}, verwende IDENTITY")
-                
-                body_parts[atype_id] = BodyPartSpec(
-                    asset_id=aid,
-                    asset_type_id=atype_id,
-                    mesh=mesh_data,
-                    mesh_scale=mesh_scale,
-                    mesh_offset=mesh_offset,
-                    cframe=cframe,
-                    transparency=transparency,
-                    base_color=base_color,
-                    texture_path=texture_path,
-                )
-                print(f"[body_part] Asset-Typ {atype_id} (ID {aid}) geladen")
-            except Exception as e:
-                print(f"[body_part] Fehler beim Laden von Asset-Typ {atype_id} (ID {aid}): {e}")
-                continue
+                roots = parse_rbx_model(client.fetch_asset_bytes(aid))
+                body_parts.update(_load_r15_body_segments(client, roots, aid, atype_id, names, work_dir))
+            except Exception as exc:
+                print(f"[body_part] Asset {aid} konnte nicht geladen werden: {exc}")
 
     # 4. Starre R6-Accessoires laden (ClassicType: keine Layered Clothing und
     # keine Accessoires vom Typ "Equipment").
@@ -1226,4 +1170,5 @@ def load_avatar_bundle(
         player_avatar_type=player_avatar_type,
         r15_part_textures=r15_part_textures,
         body_parts=body_parts,
+        r15_clothing_overlays=r15_clothing_overlays,
     )
