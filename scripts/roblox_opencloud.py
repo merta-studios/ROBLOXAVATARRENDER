@@ -54,8 +54,10 @@ ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmas
 # https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg
 KORBLOX_RIGHT_LEG_ASSET_ID = 139607718
 
-# R15-Segment eines Bein-Pakets, das nur als Oberbein uebernommen wird.
-LEG_UPPER_SEGMENT_NAMES = ("LeftUpperLeg", "RightUpperLeg")
+# Die drei R15-Segmente des Korblox-Bein-Assets. Roblox verwirft bei einem
+# Bein-Asset kein Segment - auch beim Korblox-Bein nicht (siehe
+# _load_r15_body_segments).
+KORBLOX_LEG_SEGMENT_NAMES = ("RightUpperLeg", "RightLowerLeg", "RightFoot")
 
 # R6-kompatible starre Accessoire-Typen (Layered Clothing 64..72 wird in R6 bewusst ignoriert)
 RIGID_ACCESSORY_TYPE_IDS = {
@@ -448,18 +450,19 @@ class RobloxOpenCloudClient:
     def load_korblox_leg_segments(self, work_dir: Path) -> dict[str, BodyPartSpec]:
         """Laedt die R15-Segmente des Korblox Deathspeaker Right Leg.
 
-        Das Asset (139607718) liefert zwar die Segmente Oberbein, Unterbein
-        und Fuss, aber nur das Oberbein ist ein eigenes Stueck: Unterbein und
-        Fuss sind die mechanisch aus dem klassischen R6-Bein abgeleiteten
-        Kopien (der Fuss ist ein schwarzer Klotz). Deshalb wird - wie beim
-        GFX-Typ HearthandsType, wo das Korblox-Bein ebenfalls nur ein Stueck
-        ist - ausschliesslich das rechte Oberbein uebernommen. Unterbein und
-        Fuss bleiben beim Avatar.
+        Das Asset (139607718) liefert Oberbein, Unterbein und Fuss als echte
+        R15-Segmente im Ordner "R15Fixed"; alle drei gehoeren zum
+        Korblox-Bein. Sie liegen auf dem Standard-R15-Skelett (Huefte 0,
+        Knie -0.822, Fussgelenk -1.748) und sind nur starr nach unten
+        versetzt - der Loader zieht sie ueber das Hueftgelenk wieder auf das
+        Standard-Rig. Nur das Oberbein zu uebernehmen liesse Unterbein und
+        Fuss als Blocky-Fallback im Bild stehen (genau das war der Fehler im
+        ClassicType-Render).
         """
         raw = self.fetch_asset_bytes(KORBLOX_RIGHT_LEG_ASSET_ID)
         roots = parse_rbx_model(raw)
         return _load_r15_body_segments(
-            self, roots, KORBLOX_RIGHT_LEG_ASSET_ID, 31, ("RightUpperLeg",), work_dir
+            self, roots, KORBLOX_RIGHT_LEG_ASSET_ID, 31, KORBLOX_LEG_SEGMENT_NAMES, work_dir
         )
 
     def load_korblox_leg(self, work_dir: Path) -> dict[str, Any]:
@@ -1227,21 +1230,13 @@ def _load_r15_body_segments(
     # Bein-Paket liefert also alle drei Segmente - sie sind echte Teile des
     # Avatars und duerfen nicht durch den Blocky-Fallback ersetzt werden.
     #
-    # Einzige Ausnahme ist das Korblox-Paket (139607718): dort sind
-    # Unterbein und Fuss mechanische Ableitungen desselben klassischen
-    # Beins (der Fuss ist ein schwarzer Klotz). Diese Regel gilt daher
-    # ausschliesslich fuer dieses eine Asset und nicht fuer jedes
-    # Bein-Paket.
-    if asset_id == KORBLOX_RIGHT_LEG_ASSET_ID and len(chosen) > 1:
-        upper = [node for node in chosen if node.name in LEG_UPPER_SEGMENT_NAMES]
-        if len(upper) == 1:
-            dropped = sorted(node.name for node in chosen if node is not upper[0])
-            candidates = {upper[0].name: candidates[upper[0].name]}
-            chosen = [upper[0]]
-            print(
-                f"[body_part] Asset {asset_id}: Korblox-Bein - nur das Oberbein "
-                f"({upper[0].name}) wird uebernommen; {', '.join(dropped)} bleiben beim Avatar."
-            )
+    # Das gilt genauso fuer das Korblox-Paket (139607718): Seine Segmente
+    # Oberbein, Unterbein und Fuss liegen im Ordner "R15Fixed" auf dem
+    # Standard-R15-Skelett (Knie -0.822, Fussgelenk -1.748) und sind nur
+    # starr nach unten versetzt. Wird dort nur das Oberbein uebernommen,
+    # rendert der Avatar darunter ein Blocky-Unterbein und einen
+    # Blocky-Fuss, obwohl er Korblox traegt. Deshalb gilt fuer jedes
+    # Bein-Asset dieselbe Regel: alle gelieferten Segmente bleiben.
 
     align_offset = _rig_alignment_offset(chosen)
     root_joint = _rig_root_joint(_rig_joint_attachments(chosen))

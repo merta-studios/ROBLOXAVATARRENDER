@@ -120,13 +120,14 @@ class ClassicBodyPartTests(unittest.TestCase):
             parts = _load_r15_body_segments(Client(), roots, 401, 29, ("LeftUpperArm",), Path(tmp))
         self.assertAlmostEqual(parts["LeftUpperArm"].cframe[1], 1.379, places=4)
 
-    def test_korblox_leg_asset_contributes_only_its_upper_leg(self):
-        """Das Korblox-Bein (139607718) liefert nur das Oberbein.
+    def test_korblox_leg_asset_contributes_the_whole_right_leg(self):
+        """Das Korblox-Bein (139607718) liefert alle drei rechten Segmente.
 
-        Unterbein und Fuss dieses Assets sind die mechanisch aus dem
-        klassischen R6-Bein abgeleiteten Kopien (der Fuss ist ein schwarzer
-        Klotz) und sollen beim Avatar bleiben. Diese Regel gilt fuer genau
-        dieses eine Asset.
+        Oberbein, Unterbein und Fuss liegen im Ordner "R15Fixed" auf dem
+        Standard-R15-Skelett (Knie -0.822, Fussgelenk -1.748) und sind nur
+        starr um 1 Stud nach unten versetzt. Wird nur das Oberbein
+        uebernommen, rendert der Avatar darunter ein Blocky-Unterbein und
+        einen Blocky-Fuss, obwohl er Korblox traegt.
         """
         upper = part("RightUpperLeg", 60, 160, cframe_at(0.4812, -1.2418, -0.030))
         upper.children.append(attachment("RightHipRigAttachment", cframe_at(0.0188, 0.2418, 0.030)))
@@ -141,18 +142,23 @@ class ClassicBodyPartTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch("scripts.roblox_opencloud.parse_rbx_mesh", side_effect=mesh):
             parts = _load_r15_body_segments(Client(), roots, 139607718, 31,
                 ("RightUpperLeg", "RightLowerLeg", "RightFoot"), Path(tmp))
-        self.assertEqual(set(parts), {"RightUpperLeg"})
-        # Das Oberbein wird auf das Standard-Rig gehoben (Hueft auf y = 0).
+        # Kein Segment des Korblox-Beins wird verworfen - sonst faellt das
+        # Unterbein und der Fuss auf den R15-Blocky-Rig zurueck.
+        self.assertEqual(set(parts), {"RightUpperLeg", "RightLowerLeg", "RightFoot"})
+        # Alle drei Segmente werden gemeinsam auf das Standard-Rig gehoben
+        # (Hueft auf y = 0) und behalten ihre Asset-internen Abstaende.
         self.assertAlmostEqual(parts["RightUpperLeg"].cframe[1], -0.2418, places=4)
+        self.assertAlmostEqual(parts["RightLowerLeg"].cframe[1], -1.2097, places=4)
+        self.assertAlmostEqual(parts["RightFoot"].cframe[1], -1.8713, places=4)
 
     def test_classic_r6_leg_asset_keeps_all_three_segments(self):
         """Ein klassisches R6-Bein-Paket liefert alle drei R15-Segmente.
 
         Roblox setzt beim Anziehen jedes Kind des Ordners "R15ArtistIntent"
         per "ReplaceBodyPartR15" in das R15 ein - es wird kein Segment
-        verworfen. Der Loader darf daher nur beim Korblox-Asset (139607718)
-        auf das Oberbein reduzieren, sonst fallen Unterbein und Fuss auf den
-        Blocky-Rig zurueck, obwohl der Avatar echte Teile besitzt.
+        verworfen. Der Loader verwirft deshalb bei keinem Bein-Asset ein
+        Segment, sonst fallen Unterbein und Fuss auf den Blocky-Rig zurueck,
+        obwohl der Avatar echte Teile besitzt.
         """
         upper = part("LeftUpperLeg", 66, 166, cframe_at(-0.4812, -1.2418, -0.030))
         upper.children.append(attachment("LeftHipRigAttachment", cframe_at(-0.0188, 0.2418, 0.030)))
@@ -682,3 +688,35 @@ class KorbloxLoaderTests(unittest.TestCase):
         result = self._run({"MeshId": "rbxassetid://123"})
         self.assertIsNotNone(result["mesh"])
         self.assertIsNone(result["texture_path"])
+
+    def test_korblox_leg_segments_include_lower_leg_and_foot(self):
+        """Das Korblox-Bein wird komplett geladen - inklusive Unterbein/Fuss.
+
+        Nur das Oberbein zu nehmen liess im ClassicType-Render ein
+        Blocky-Unterbein und einen Blocky-Fuss unter dem Korblox-Oberbein
+        stehen, obwohl der Avatar das Bein besitzt.
+        """
+        from scripts import roblox_opencloud as roc
+
+        upper = part("RightUpperLeg", 9598310133, 902843398, cframe_at(0.4812, -1.2418, -0.030))
+        upper.children.append(attachment("RightHipRigAttachment", cframe_at(0.0188, 0.2418, 0.030)))
+        lower = part("RightLowerLeg", 9598310125, 902843398, cframe_at(0.5877, -2.2097, -0.0708))
+        foot = part("RightFoot", 9598310127, 902843398, cframe_at(0.5980, -2.8713, -0.011))
+        root = RbxNode("Model", "KorbloxLeg", children=[
+            RbxNode("Folder", "R15Fixed", children=[upper, lower, foot]),
+        ])
+
+        client = object.__new__(roc.RobloxOpenCloudClient)
+        client._asset_cache = {}
+        client.api_key = ""
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(roc, "parse_rbx_model", return_value=[root]), \
+             patch.object(roc, "parse_rbx_mesh", side_effect=mesh), \
+             patch.object(roc.RobloxOpenCloudClient, "fetch_asset_bytes", return_value=b"x"), \
+             patch.object(roc.RobloxOpenCloudClient, "fetch_image", return_value=Image.new("RGBA", (2, 2))), \
+             patch.object(roc.RobloxOpenCloudClient, "__init__", lambda self, *a, **k: None):
+            parts = client.load_korblox_leg_segments(Path(tmp))
+        self.assertEqual(set(parts), {"RightUpperLeg", "RightLowerLeg", "RightFoot"})
+        # Gemeinsamer Rig-Versatz: das Asset sitzt 1 Stud zu tief.
+        self.assertAlmostEqual(parts["RightFoot"].cframe[1], -1.8713, places=4)
+        self.assertEqual(parts["RightFoot"].asset_id, 139607718)
