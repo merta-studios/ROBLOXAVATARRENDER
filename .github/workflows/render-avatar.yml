@@ -12,6 +12,10 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - 'requirements.txt'
+      # Workflow-Aenderungen muessen ebenfalls rendern: sonst laesst sich ein
+      # neuer Diagnose-Schritt nie verifizieren (er greift erst, wenn ein
+      # Render laeuft).
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       username:
