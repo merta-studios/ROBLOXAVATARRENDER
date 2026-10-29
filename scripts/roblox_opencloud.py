@@ -1313,13 +1313,13 @@ def _load_r15_body_segments(
                 part_cframe=part_cframe,
                 align_offset=align_offset,
             )
-            if max(abs(v) for v in align_offset) > 2.0:
-                # Ungewoehnlich grosser Versatz: das Mesh-File sichern, damit
-                # die Platzierung des Assets nachvollziehbar bleibt.
-                try:
-                    (work_dir / f"mesh_{asset_id}_{name}_{mid}.mesh").write_bytes(raw_mesh)
-                except OSError:
-                    pass
+            # Das Mesh-File im Arbeitsverzeichnis sichern: es ist die
+            # Referenz fuer UVs, Skalierung und Platzierung des Segments
+            # (und liegt im Diagnose-Tag des Render-Laufs bereit).
+            try:
+                (work_dir / f"mesh_{asset_id}_{name}_{mid}.mesh").write_bytes(raw_mesh)
+            except OSError:
+                pass
             result[name] = BodyPartSpec(
                 asset_id=asset_id, asset_type_id=asset_type_id, mesh=mesh,
                 mesh_scale=scale, mesh_offset=offset,
@@ -1392,6 +1392,19 @@ def load_avatar_bundle(
     shirt_img = client.fetch_image(int(by_type[11][0]["id"])) if by_type.get(11) else None
     pants_img = client.fetch_image(int(by_type[12][0]["id"])) if by_type.get(12) else None
     tshirt_img = client.fetch_image(int(by_type[2][0]["id"])) if by_type.get(2) else None
+
+    # Die Original-Templates der Classic-Kleidung (585x559) im Arbeits-
+    # verzeichnis ablegen: sie sind die Referenz fuer die UV-Rechtecke der
+    # Face-Tiles und werden fuer die Fehlersuche mit veroeffentlicht.
+    for template_name, template_img, template_type in (
+        ("shirt", shirt_img, 11), ("pants", pants_img, 12), ("tshirt", tshirt_img, 2),
+    ):
+        if template_img is None:
+            continue
+        template_id = int(by_type[template_type][0]["id"])
+        template_img.save(
+            work_dir / f"classic_clothing_{template_name}_{template_id}.png", format="PNG"
+        )
 
     body_tex = compose_r6_body_texture(body_colors, shirt_img, pants_img, tshirt_img, scale=2)
     body_tex_path = str(work_dir / "r6_body_texture.png")

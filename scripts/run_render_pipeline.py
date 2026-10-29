@@ -322,7 +322,9 @@ def main() -> int:
             # im Diagnose-Tag, damit ein fehlerhaftes Asset nachvollziehbar
             # bleibt.
             try:
-                for pattern in ("bodypart_*.png", "mesh_*.mesh"):
+                for pattern in (
+                    "bodypart_*.png", "mesh_*.mesh", "r15_*.png", "classic_clothing_*.png",
+                ):
                     for item in sorted(work_dir.glob(pattern)):
                         shutil.copy2(item, output_path.parent / item.name)
             except OSError:
