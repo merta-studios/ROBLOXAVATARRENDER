@@ -109,7 +109,7 @@ jobs:
           # 3. Releases ("Versionen") bereinigen: Nur das allerneueste Release behalten
           releases = gh_api("GET", f"repos/{repo}/releases?per_page=100") or []
           releases.sort(key=lambda r: r.get("created_at") or "", reverse=True)
-          kept_tags = {"latest-render"}
+          kept_tags = {"latest-render", "latest-render-debug"}
           for idx, rel in enumerate(releases):
               if idx == 0:
                   if rel.get("tag_name"):
