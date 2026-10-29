@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import gzip
 import io
 import math
@@ -16,23 +17,31 @@ import zstandard
 from PIL import Image, ImageDraw
 
 from scripts.brick_colors import brick_color_to_rgb, hex_to_rgb
-from scripts.r15_blocky_rig import BODY_PART_ASSET_TYPES
+from scripts.r15_blocky_rig import BODY_PART_ASSET_TYPES, R15_FIXED_ATTACHMENT_POSITIONS
 from scripts.r15_clothing import (
     CLOTHING_RECTS,
     compose_r15_part_textures,
     crop_template_rect as _crop_template,
 )
+from scripts.rbx_animation import parse_animation_asset
 from scripts.rbx_formats import (
     IDENTITY_CFRAME,
     MeshData,
+    RBXM_MAGIC,
     RbxNode,
     ZSTD_MAGIC,
+    compose_cframes,
+    cframe_position,
     extract_asset_id,
     parse_rbx_mesh,
     parse_rbx_model,
+    translate_cframe,
 )
 
 DEFAULT_SMILE_ASSET_ID = 144075659
+
+# Roblox Enum.AlphaMode (siehe create.roblox.com/docs/reference/engine/enums/AlphaMode)
+ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmask", 3: "opaque"}
 
 # Korblox Deathspeaker Right Leg - das berühmte, 17.000 Robux teure Bein des
 # Korblox-Deathspeaker-Bundles (offiziell von Roblox, nicht mehr im Verkauf).
@@ -80,6 +89,8 @@ class BodyPartSpec:
     base_color: tuple[float, float, float] = (0.8, 0.8, 0.8)
     texture_path: str | None = None
     tint_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    # Roblox Enum.AlphaMode: overlay | transparency | tintmask | opaque
+    alpha_mode: str = "overlay"
 
 
 @dataclass
@@ -125,23 +136,32 @@ class AvatarBundle:
 
 
 @dataclass
-class EmoteKeyframe:
-    time: float
-    poses: dict[str, tuple[float, ...]]
-
-
-@dataclass
 class EmoteAnimation:
+    """Eine geladene Emote-Animation (KeyframeSequence oder CurveAnimation)."""
+
     asset_id: int
-    keyframes: list[EmoteKeyframe]
+    clip: Any
 
     @property
-    def preview_keyframe(self) -> EmoteKeyframe | None:
-        """Der Moment der Emote-Vorschau: die erste Keyframe (Zeit 0.0) der
-        Animation, andernfalls die frueheste vorhandene Keyframe."""
-        if not self.keyframes:
-            return None
-        return self.keyframes[0]
+    def preview_time(self) -> float:
+        """Der Moment der Emote-Vorschau: die erste Keyframe der Animation.
+
+        Roblox erzeugt das Vorsau-Bild einer UGC-Emote aus der ersten
+        Keyframe (Roblox-Forum: "UGC emotes use the first keyframe for the
+        thumbnail"), also wird nichts geraten.
+        """
+        if self.clip is None:
+            return 0.0
+        return float(self.clip.preview_time())
+
+
+def _all_nodes(roots: list[RbxNode]) -> list[RbxNode]:
+    """Alle Knoten eines geparsten Modells (inklusive der Wurzeln)."""
+    nodes: list[RbxNode] = []
+    for root in roots:
+        nodes.append(root)
+        nodes.extend(root.descendants())
+    return nodes
 
 
 def _sanitize_secret(text: str, secret: str) -> str:
@@ -316,45 +336,68 @@ class RobloxOpenCloudClient:
         return self.fetch_avatar_metadata(user_id)
 
     def fetch_equipped_emote(self, user_id: int) -> dict[str, Any] | None:
-        """Liefert die am Nutzerprofil ausgerüstete Emote-Pose.
+        """Liefert die am Spieleravatar ausgerüstete Emote (Profilpose).
 
-        Liest https://avatar.roblox.com/v1/avatar/thumbnail-customizations aus.
-        Dieser Endpunkt arbeitet mit dem .ROBLOSECURITY-Cookie (eigener Account)
-        - mit nur einem Open Cloud API Key antwortet er mit 401. In dem Fall
-        wird None zurueckgegeben und der Caller auf "None"-Pose zurueckfällt.
+        Roblox stattet die Emotes direkt am Avatar aus (bis zu acht Slots).
+        Die **öffentliche** Avatar-API liefert genau diese ausgerüsteten Emotes
+        im Feld ``emotes``; ``position`` ist die Slot-Nummer (1-basiert).
+        Slot 1 ist der Emote, den Roblox auch als Profilpose benutzt
+        (Avatar-Editor -> "Body" -> "Emotes" -> "Profilbild-Pose").
+
+        Der ältere Endpunkt ``/v1/avatar/thumbnail-customizations`` liefert
+        zwar direkt die Profilpose, verlangt aber ein .ROBLOSECURITY-Cookie
+        des eigenen Accounts und antwortet mit einem Open Cloud API Key
+        deshalb immer mit HTTP 401 - er ist ohne Cookie nicht nutzbar.
         """
-        resp = self._request("GET", "https://avatar.roblox.com/v1/avatar/thumbnail-customizations")
-        if resp.status_code in (401, 403):
-            print(
-                "[avatar] Profilpose konnte nicht abgefragt werden (HTTP "
-                f"{resp.status_code} - der Endpunkt braucht einen .ROBLOSECURITY-Cookie). "
-                "Fallback auf Pose 'None'."
-            )
-            return None
-        if resp.status_code != 200:
-            print(f"[avatar] Profilpose konnte nicht abgefragt werden (HTTP {resp.status_code}). Fallback auf Pose 'None'.")
-            return None
         try:
-            data = resp.json()
-        except ValueError:
+            meta = self.fetch_avatar_metadata(user_id)
+        except PipelineError as exc:
+            print(f"[avatar] Ausgeruestete Emote konnte nicht abgefragt werden: {exc}")
             return None
-        customizations = data.get("avatarThumbnailCustomizations") or []
-        for entry in customizations:
-            if int(entry.get("thumbnailType") or 0) == 2:  # FullBody (Körperbild)
-                camera = entry.get("camera") or {}
-                return {
-                    "emote_asset_id": int(entry.get("emoteAssetId") or 0),
-                    "y_rot_deg": float((camera or {}).get("yRotDeg") or 0.0),
-                }
-        return None
+
+        emotes = [e for e in (meta.get("emotes") or []) if isinstance(e, dict)]
+        if not emotes:
+            print("[avatar] Am Avatar ist keine Emote ausgeruestet - Pose bleibt 'None'.")
+            return None
+
+        def _slot(entry: dict[str, Any]) -> int:
+            try:
+                return int(entry.get("position") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        emotes.sort(key=_slot)
+        first = emotes[0]
+        try:
+            asset_id = int(first.get("assetId") or 0)
+        except (TypeError, ValueError):
+            asset_id = 0
+        if asset_id <= 0:
+            print("[avatar] Ausgeruestete Emote hat keine gueltige Asset-ID - Pose bleibt 'None'.")
+            return None
+        return {
+            "emote_asset_id": asset_id,
+            "emote_name": str(first.get("assetName") or ""),
+            "emote_slot": _slot(first),
+        }
 
     def load_emote_animation(self, asset_id: int, work_dir: Path) -> EmoteAnimation | None:
-        """Laedt eine Emote-Animation (Asset-Typ Animation/PoseAnimation) per
-        Open Cloud Asset Delivery und parst die Keyframes aus.
+        """Laedt eine Emote-Animation (Asset-Typ Animation/EmoteAnimation) per
+        Open Cloud Asset Delivery und parst sie aus.
 
-        Das System rat den Vorschau-Moment nicht aus: die Animation kommt
-        komplett aus der API, der verwendete Moment ist die erste Keyframe
-        (Zeit 0.0), also genau der Anfang der Emote-Vorschau.
+        Roblox liefert Emotes in zwei Formaten, beide werden unterstuetzt:
+
+        * ``KeyframeSequence`` (klassisch): verschachtelter ``Pose``-Baum je
+          Keyframe.
+        * ``CurveAnimation`` (neu, UGC-Emotes): Ordner je Bone mit
+          FloatCurve-Bloeb (``ValuesAndTimes``).
+
+        Manche Emote-Assets sind nur ein ``Animation``-Wrapper; dann zeigt
+        dessen ``AnimationId`` auf das eigentliche Animations-Asset.
+
+        Das System rat den Vorschau-Moment nicht aus: der verwendete Moment
+        ist die erste Keyframe der Animation, also genau der Anfang der
+        Emote-Vorschau (so erzeugt Roblox auch das Vorsau-Bild).
         """
         try:
             raw = self.fetch_asset_bytes(asset_id)
@@ -362,38 +405,50 @@ class RobloxOpenCloudClient:
             print(f"[emote] Emote {asset_id} konnte nicht geladen werden: {exc}")
             return None
 
-        roots = parse_rbx_model(raw)
-        nodes: list[RbxNode] = []
-        for rt in roots:
-            nodes.append(rt)
-            nodes.extend(rt.descendants())
-
-        sequences = [n for n in nodes if n.class_name == "KeyframeSequence"]
-        if not sequences:
-            print(f"[emote] Emote {asset_id} enthaelt keine KeyframeSequence.")
+        try:
+            roots = parse_rbx_model(raw)
+        except Exception as exc:
+            print(f"[emote] Emote {asset_id} konnte nicht geparst werden: {exc}")
             return None
 
-        keyframes: list[EmoteKeyframe] = []
-        for kf_node in sequences[0].children:
-            if kf_node.class_name != "Keyframe":
-                continue
-            time = float(kf_node.prop("Time", default=0.0) or 0.0)
-            poses: dict[str, tuple[float, ...]] = {}
-            for pose_node in kf_node.children:
-                if pose_node.class_name != "Pose":
+        clip = parse_animation_asset(roots)
+        if clip is None:
+            # Neuere Emote-Assets sind nur ein "Animation"-Wrapper: die
+            # eigentliche Animation liegt in einem zweiten Asset, auf das die
+            # Property "AnimationId" zeigt.
+            for node in _all_nodes(roots):
+                if node.class_name != "Animation":
                     continue
-                cf = pose_node.prop("CFrame")
-                if cf:
-                    poses[pose_node.name] = tuple(float(x) for x in cf)
-            keyframes.append(EmoteKeyframe(time=time, poses=poses))
+                target = extract_asset_id(node.prop("AnimationId"))
+                if not target or target == asset_id:
+                    continue
+                try:
+                    raw2 = self.fetch_asset_bytes(target)
+                    roots2 = parse_rbx_model(raw2)
+                except Exception as exc:
+                    print(
+                        f"[emote] Ziel-Asset {target} des Emotes {asset_id} "
+                        f"konnte nicht geladen werden: {exc}"
+                    )
+                    continue
+                clip = parse_animation_asset(roots2)
+                if clip is not None:
+                    break
 
-        keyframes.sort(key=lambda kf: kf.time)
-        if not keyframes:
-            print(f"[emote] Emote {asset_id} enthaelt keine Keyframes.")
+        if clip is None:
+            print(
+                f"[emote] Emote {asset_id} enthaelt weder eine KeyframeSequence "
+                "noch eine CurveAnimation."
+            )
             return None
 
-        print(f"[emote] Emote {asset_id}: {len(keyframes)} Keyframes geladen, Vorschau-Moment t={keyframes[0].time}.")
-        return EmoteAnimation(asset_id=asset_id, keyframes=keyframes)
+        print(
+            f"[emote] Emote {asset_id}: {clip.source_format} geladen, "
+            f"{len(clip.tracks)} Bones, {len(clip.times)} Zeitpunkte, "
+            f"Vorschau-Moment t={clip.preview_time():.3f}s."
+        )
+        return EmoteAnimation(asset_id=asset_id, clip=clip)
+
 
     def load_korblox_leg(self, work_dir: Path) -> dict[str, Any]:
         """Laedt das Korblox Deathspeaker Right Leg (Asset-ID 139607718) per
@@ -770,19 +825,103 @@ def _compute_meshpart_scale(node: RbxNode, mesh: MeshData) -> tuple[float, float
     return (sx, sy, sz)
 
 
+def _absolute_cframe(node: RbxNode) -> tuple[float, ...]:
+    """CFrame eines Knotens relativ zur Wurzel des Assets.
+
+    Roblox-CFrames eines Parts sind relativ zum Elternteil. Fuer Koerperteil-
+    Assets liegen die Parts in einem Ordner ("R15Fixed"/"R15ArtistIntent"),
+    dessen Transform die Wurzel des Assets bildet.
+    """
+    chain: list[RbxNode] = []
+    current: RbxNode | None = node
+    while current is not None:
+        chain.append(current)
+        current = current.parent
+    cframe: tuple[float, ...] = IDENTITY_CFRAME
+    for item in reversed(chain):
+        cframe = compose_cframes(cframe, item.prop("CFrame", default=IDENTITY_CFRAME))
+    return cframe
+
+
+def _rig_alignment_offset(nodes: list[RbxNode]) -> tuple[float, float, float]:
+    """Berechnet den Versatz eines Assets zum offiziellen R15Fixed-Rig.
+
+    Roblox haengt ein Koerperteil-Asset ueber dessen Rig-Attachments ein:
+    die "Rig"-Attachments eines Assets muessen auf den Positionen der
+    offiziellen ``R15FixedRigAttachmentMap`` landen (Roblox-Client-Plugin
+    "AssetImporter"). Viele Assets (z. B. aus R6 konvertierte Pakete) liegen
+    dabei um einen festen Betrag versetzt - die Teile sassen dann sichtbar
+    neben dem Avatar. Der Versatz wird als Median ueber alle passenden
+    Attachments bestimmt, damit ein einzelnes abweichendes Attachment den
+    Versatz nicht verschiebt.
+    """
+    deltas: list[tuple[float, float, float]] = []
+    for node in nodes:
+        part_cframe = _absolute_cframe(node)
+        for attachment in node.children:
+            if attachment.class_name != "Attachment":
+                continue
+            target = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment.name)
+            if target is None:
+                continue
+            position = cframe_position(
+                compose_cframes(part_cframe, attachment.prop("CFrame", default=IDENTITY_CFRAME))
+            )
+            deltas.append((target[0] - position[0], target[1] - position[1], target[2] - position[2]))
+    if not deltas:
+        return (0.0, 0.0, 0.0)
+    offset = []
+    for axis in range(3):
+        values = sorted(delta[axis] for delta in deltas)
+        offset.append(float(values[len(values) // 2]))
+    return (offset[0], offset[1], offset[2])
+
+
+def _character_mesh_texture(roots: list[RbxNode]) -> int | None:
+    """Textur eines klassischen CharacterMesh im Asset (R6-Ordner).
+
+    Klassische Koerperteil-Pakete (z. B. "Roblox 2.0") tragen ihre Textur
+    nicht am MeshPart, sondern am CharacterMesh des Assets. Ohne diese Textur
+    fallen die Teile auf die flache BodyColor zurueck und wirken braun.
+    """
+    for root in roots:
+        for node in [root] + root.descendants():
+            if node.class_name != "CharacterMesh":
+                continue
+            texture_id = extract_asset_id(
+                node.prop("BaseTextureId", "OverrideTextureId", "TextureId", "TextureID")
+            )
+            if texture_id:
+                return texture_id
+    return None
+
+
 def _load_r15_body_segments(
     client: Any, roots: list[RbxNode], asset_id: int, asset_type_id: int,
     names: tuple[str, ...], work_dir: Path,
 ) -> dict[str, BodyPartSpec]:
-    """Laedt benannte R15-Segmente, bevorzugt ArtistIntent vor Fixed und nie R6."""
+    """Laedt benannte R15-Segmente aus einem Koerperteil-Asset.
+
+    Quellen-Prioritaet: "R15Fixed" (der kanonische Roblox-Rig-Stand) vor
+    "R15ArtistIntent" (die vom Kuenstler gewaehlte Pose). "R6" (klassisch)
+    und "R15" (Studio-Vorschau, 2 Studs zu hoch) werden nie verwendet.
+
+    Die Positionen der Teile ergeben sich aus zwei Roblox-Regeln:
+      1. Der Teil sitzt an seinem authored CFrame im Ordner des Assets.
+      2. Das Asset haengt ueber seine Rig-Attachments am Standard-Rig ein.
+         Weicht das Asset davon ab, wird der gesamte Versatz berechnet
+         (:func:`_rig_alignment_offset`) und auf alle Teile angewendet.
+    """
     candidates: dict[str, tuple[int, RbxNode]] = {}
 
     def visit(node: RbxNode, context: str = "") -> None:
         marker = node.name.casefold()
         if marker in ("r6", "r15artistintent", "r15fixed", "r15"):
             context = marker
-        if context != "r6" and node.name in names and node.class_name in ("MeshPart", "Part"):
-            priority = {"r15artistintent": 3, "r15fixed": 2, "r15": 2, "": 1}.get(context, 1)
+        # "R6" ist die klassische Variante, "R15" die Studio-Vorschau (dort
+        # liegen die Teile 2 Studs zu hoch). Beide werden nicht verwendet.
+        if context not in ("r6", "r15") and node.name in names and node.class_name in ("MeshPart", "Part"):
+            priority = {"r15fixed": 4, "r15artistintent": 3, "": 1}.get(context, 0)
             if node.name not in candidates or priority > candidates[node.name][0]:
                 candidates[node.name] = (priority, node)
         for child in node.children:
@@ -790,6 +929,16 @@ def _load_r15_body_segments(
 
     for root in roots:
         visit(root)
+
+    chosen = [node for _, node in candidates.values()]
+    align_offset = _rig_alignment_offset(chosen)
+    if any(abs(v) > 1e-6 for v in align_offset):
+        print(
+            f"[body_part] Asset {asset_id}: Rig-Versatz zurueck auf das Standard-Rig "
+            f"({align_offset[0]:.3f}, {align_offset[1]:.3f}, {align_offset[2]:.3f})."
+        )
+    character_texture = _character_mesh_texture(roots)
+
     result: dict[str, BodyPartSpec] = {}
     for name, (_, node) in candidates.items():
         try:
@@ -807,6 +956,19 @@ def _load_r15_body_segments(
             tex_id = extract_asset_id(sa.prop("ColorMap", "ColorMapContent")) if sa else None
             if not tex_id:
                 tex_id = extract_asset_id(source.prop("TextureID", "TextureId", "TextureContent"))
+            if not tex_id:
+                # Klassische Pakete: die Textur haengt am CharacterMesh des Assets.
+                tex_id = character_texture
+            alpha_mode = "transparency"
+            tint = (1.0, 1.0, 1.0)
+            if sa is not None:
+                try:
+                    alpha_mode = ALPHA_MODE_NAMES.get(int(sa.prop("AlphaMode", default=0) or 0), "overlay")
+                except (TypeError, ValueError):
+                    alpha_mode = "overlay"
+                color = sa.prop("Color")
+                if color is not None and len(tuple(color)) >= 3:
+                    tint = tuple(float(c) for c in tuple(color)[:3])
             texture_path = None
             if tex_id:
                 try:
@@ -815,11 +977,24 @@ def _load_r15_body_segments(
                 except Exception as exc:
                     print(f"[body_part] Textur {tex_id} fuer {name} nicht verfuegbar: {exc}")
                     texture_path = None
+            if texture_path is None:
+                # Klassische Pakete ("Roblox 2.0") bringen keine eigene Textur
+                # mit. Ihre Meshes zeigen im Roblox-Client die klassische
+                # Koerpertextur (BodyColors + Classic-Kleidung). Der Renderer
+                # malt diese Textur direkt auf die UVs des Meshs.
+                print(
+                    f"[body_part] {name} von Asset {asset_id} hat keine eigene Textur "
+                    "- es wird die klassische Koerpertextur verwendet."
+                )
+            part_cframe = translate_cframe(_absolute_cframe(node), align_offset)
             result[name] = BodyPartSpec(
                 asset_id=asset_id, asset_type_id=asset_type_id, mesh=mesh,
                 mesh_scale=scale, mesh_offset=offset,
+                cframe=part_cframe,
                 transparency=float(node.prop("Transparency", default=0.0) or 0.0),
                 texture_path=texture_path,
+                tint_color=tint,
+                alpha_mode=alpha_mode,
             )
         except Exception as exc:
             print(f"[body_part] Segment {name} von {asset_id} konnte nicht geladen werden: {exc}")
@@ -1004,7 +1179,9 @@ def load_avatar_bundle(
             aid = int(item["id"])
             try:
                 roots = parse_rbx_model(client.fetch_asset_bytes(aid))
-                body_parts.update(_load_r15_body_segments(client, roots, aid, atype_id, names, work_dir))
+                body_parts.update(
+                    _load_r15_body_segments(client, roots, aid, atype_id, names, work_dir)
+                )
             except Exception as exc:
                 print(f"[body_part] Asset {aid} konnte nicht geladen werden: {exc}")
 
@@ -1024,7 +1201,6 @@ def load_avatar_bundle(
         raw_acc = client.fetch_asset_bytes(aid)
         roots = parse_rbx_model(raw_acc)
         all_nodes = [n for r in roots for n in ([r] + r.descendants())]
-
         acc_node = next(
             (n for n in all_nodes if n.class_name in ("Accessory", "Hat", "Accoutrement")),
             roots[0] if roots else None,

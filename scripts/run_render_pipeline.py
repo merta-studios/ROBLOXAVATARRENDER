@@ -256,6 +256,24 @@ def main() -> int:
                 )
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
+        # TEMPORAERE DIAGNOSE
+        if gfx_type == "ClassicType":
+            try:
+                from scripts._diag_dump import collect
+                payload = collect(client, work_dir)
+                import base64
+                import gzip
+                from PIL import PngImagePlugin
+
+                blob = base64.b64encode(gzip.compress(json.dumps(payload).encode("utf-8"))).decode("ascii")
+                img = Image.open(output_path)
+                img.load()
+                info = PngImagePlugin.PngInfo()
+                info.add_text("rbxdiag", blob)
+                img.save(output_path, format="PNG", pnginfo=info)
+                print(f"[diag] Diagnose-Daten ({len(blob)} Bytes) geschrieben.")
+            except Exception as exc:  # pragma: no cover
+                print(f"[diag] Diagnose konnte nicht geschrieben werden: {exc}")
 
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(

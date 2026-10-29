@@ -84,6 +84,53 @@ BODY_PART_ASSET_TYPES: dict[int, tuple[str, ...]] = {
     31: ("RightUpperLeg", "RightLowerLeg", "RightFoot"),
 }
 
+# Offizielle Roblox-Rig-Attachment-Positionen des R15Fixed-Rigs.
+#
+# Quelle: Roblox-Client-Plugin "AssetImporter" aus dem offiziellen Repository
+# github.com/MaximumADHD/Roblox-Client-Tracker ->
+# BuiltInPlugins/AssetImporter/Src/Utility/RigSetup/FixedRigPositions.luac.s
+# (Tabelle "R15FixedRigAttachmentMap"). Das ist genau die Tabelle, die Roblox
+# selbst benutzt, um ein Koerperteil-Asset in das Standard-Rig einzuhängen:
+# die Rig-Attachments eines Assets muessen auf diesen Positionen landen.
+#
+# Koordinaten: Roblox-Character-Space, HumanoidRootPart im Ursprung, die
+# Fusssohlen liegen bei y = -2 (Roblox-Rig-Root sitzt 2 Studs ueber dem Boden).
+R15_FIXED_ATTACHMENT_POSITIONS: dict[str, tuple[float, float, float]] = {
+    "RootRigAttachment": (0.0, 0.0, 0.0),
+    "WaistRigAttachment": (0.0, 0.4, 0.0),
+    "NeckRigAttachment": (0.0, 2.0, 0.0),
+    "LeftShoulderRigAttachment": (-1.0, 1.763, 0.0),
+    "RightShoulderRigAttachment": (1.0, 1.763, 0.0),
+    "LeftElbowRigAttachment": (-1.5, 1.035, 0.0),
+    "RightElbowRigAttachment": (1.5, 1.035, 0.0),
+    "LeftWristRigAttachment": (-1.5, 0.275, 0.0),
+    "RightWristRigAttachment": (1.5, 0.275, 0.0),
+    "LeftHipRigAttachment": (-0.5, 0.0, 0.0),
+    "RightHipRigAttachment": (0.5, 0.0, 0.0),
+    "LeftKneeRigAttachment": (-0.5, -0.822, 0.0),
+    "RightKneeRigAttachment": (0.5, -0.822, 0.0),
+    "LeftAnkleRigAttachment": (-0.5, -1.748, 0.0),
+    "RightAnkleRigAttachment": (0.5, -1.748, 0.0),
+    "LeftGripAttachment": (-1.5, 0.0, 0.0),
+    "RightGripAttachment": (1.5, 0.0, 0.0),
+    "LeftShoulderAttachment": (-1.5, 1.953, 0.0),
+    "RightShoulderAttachment": (1.5, 1.953, 0.0),
+    "BodyFrontAttachment": (0.0, 1.0, -0.5),
+    "BodyBackAttachment": (0.0, 1.0, 0.5),
+    "LeftCollarAttachment": (-1.0, 2.0, 0.0),
+    "RightCollarAttachment": (1.0, 2.0, 0.0),
+    "NeckAttachment": (0.0, 2.0, 0.0),
+    "LeftFootAttachment": (-0.5, -2.0, 0.0),
+    "RightFootAttachment": (0.5, -2.0, 0.0),
+    "WaistCenterAttachment": (0.0, 0.0, 0.0),
+    "WaistFrontAttachment": (0.0, 0.0, -0.5),
+    "WaistBackAttachment": (0.0, 0.0, 0.5),
+    "FaceCenterAttachment": (0.0, 2.5, 0.0),
+    "FaceFrontAttachment": (0.0, 2.5, -0.6),
+    "HairAttachment": (0.0, 3.1, 0.0),
+    "HatAttachment": (0.0, 3.1, 0.0),
+}
+
 EXPECTED_PARTS = tuple(PART_COLOR_KEYS)
 
 

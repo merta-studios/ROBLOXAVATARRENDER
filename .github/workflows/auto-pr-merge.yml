@@ -57,10 +57,26 @@ jobs:
 
             # Ohne expliziten Dispatch-Input wuerde der Render-Workflow immer
             # HearthandsType nehmen. ClassicType-Aenderungen muessen dagegen
-            # auch den R15-Pfad in echter CI rendern.
-            RENDER_GFX_TYPE="HearthandsType"
-            if ! git diff --quiet "origin/main...origin/$BRANCH" -- ClassicType/; then
+            # auch den R15-Pfad in echter CI rendern. Gemeinsame Aenderungen
+            # (Loader, Pipeline, Tests) betreffen beide GFX-Typen.
+            CLASSIC_CHANGED="false"
+            HEARTHANDS_CHANGED="false"
+            SHARED_CHANGED="false"
+            if ! git diff --quiet "origin/main...origin/$BRANCH" -- ClassicType/ scripts/classic_render.py scripts/r15_blocky_rig.py scripts/r15_clothing.py; then
+              CLASSIC_CHANGED="true"
+            fi
+            if ! git diff --quiet "origin/main...origin/$BRANCH" -- HearthandsType/ scripts/blender_render.py; then
+              HEARTHANDS_CHANGED="true"
+            fi
+            if ! git diff --quiet "origin/main...origin/$BRANCH" -- scripts/ tests/ requirements.txt backgrounds/ WomanRig.blend; then
+              SHARED_CHANGED="true"
+            fi
+            if [ "$CLASSIC_CHANGED" = "true" ] && [ "$HEARTHANDS_CHANGED" = "false" ] && [ "$SHARED_CHANGED" = "false" ]; then
               RENDER_GFX_TYPE="ClassicType"
+            elif [ "$CLASSIC_CHANGED" = "false" ] && [ "$HEARTHANDS_CHANGED" = "true" ] && [ "$SHARED_CHANGED" = "false" ]; then
+              RENDER_GFX_TYPE="HearthandsType"
+            else
+              RENDER_GFX_TYPE="Both"
             fi
 
             git checkout -B main origin/main

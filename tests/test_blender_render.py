@@ -193,6 +193,56 @@ class RenderRegressionTests(unittest.TestCase):
     def test_loaded_head_and_accessories_share_a_tiny_downward_offset(self):
         self.assertEqual(AVATAR_ATTACHMENT_DROP, 0.01)
 
+    def test_emote_pose_rotates_segment_around_its_joint(self):
+        """Die Emote-Pose dreht ein Segment um sein Gelenk (R15-Rig)."""
+        from mathutils import Matrix
+
+        from scripts.classic_render import _apply_emote_to_r15
+        from scripts.rbx_animation import AnimationClip, BoneTrack, CurveKey
+        from scripts.roblox_opencloud import EmoteAnimation
+
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        scene = bpy.context.scene
+        body_objects = {}
+        for name in ("Head", "LeftUpperArm"):
+            obj = bpy.data.objects.new(name, bpy.data.meshes.new(name))
+            scene.collection.objects.link(obj)
+            obj.matrix_world = Matrix.Translation((0.0, 0.0, 3.0))
+            body_objects[name] = obj
+
+        clip = AnimationClip(source_format="Test", tracks={})
+        root = BoneTrack(name="HumanoidRootPart", parent=None)
+        root.rotation_curves = {
+            axis: [CurveKey(time=0.0, value=0.0)] for axis in ("X", "Y", "Z")
+        }
+        arm = BoneTrack(name="LeftUpperArm", parent="HumanoidRootPart")
+        arm.rotation_curves = {
+            "X": [CurveKey(time=0.0, value=0.0)],
+            "Y": [CurveKey(time=0.0, value=0.0)],
+            "Z": [CurveKey(time=0.0, value=1.5707963)],
+        }
+        clip.tracks = {"HumanoidRootPart": root, "LeftUpperArm": arm}
+
+        # Accessoire am Arm (z. B. Schulter-Accessoire) mitbewegen lassen.
+        accessory = bpy.data.objects.new("ClassicAccessory_1", bpy.data.meshes.new("acc"))
+        scene.collection.objects.link(accessory)
+        accessory.matrix_world = Matrix.Translation((1.5, 0.0, 4.0))
+
+        _apply_emote_to_r15(
+            EmoteAnimation(asset_id=1, clip=clip),
+            body_objects,
+            scene,
+            [(accessory, "LeftUpperArm")],
+        )
+        bpy.context.view_layer.update()
+
+        arm_pos = np.asarray(body_objects["LeftUpperArm"].matrix_world)[:3, 3]
+        # 90 Grad um die Hochachse: der Arm schwenkt aus der Ruhelage.
+        self.assertNotAlmostEqual(float(arm_pos[0]), 0.0, places=3)
+        # Das Accessoire folgt dem Arm (es liegt nicht mehr an der alten Stelle).
+        acc_pos = np.asarray(accessory.matrix_world)[:3, 3]
+        self.assertNotAlmostEqual(float(acc_pos[0]), 1.5, places=3)
+
 
 def load_tests(loader, tests, pattern):
     """Ohne bpy bleiben die Blender-Tests komplett aussen vor (kein Skip-Zaehler)."""
