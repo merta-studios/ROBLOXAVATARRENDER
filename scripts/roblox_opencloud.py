@@ -1162,12 +1162,20 @@ def load_avatar_bundle(
         face_texture_path=face_tex_path,
     )
     head_asset_item = (by_type.get(17) or by_type.get(79) or [None])[0]
+    print(
+        f"[head] Kopf-Assets in der Avatar-API: Typ 17={len(by_type.get(17) or [])}, "
+        f"Typ 79={len(by_type.get(79) or [])}"
+    )
     if head_asset_item is not None:
         head_aid = int(head_asset_item["id"])
         raw_head = client.fetch_asset_bytes(head_aid)
         try:
             roots = parse_rbx_model(raw_head)
             nodes = [n for r in roots for n in ([r] + r.descendants())]
+            print(
+                f"[head] Asset {head_aid}: "
+                f"{[(n.class_name, n.name) for n in nodes][:12]}"
+            )
             # Dynamic heads sind MeshParts mit eigener, UV-gebundener Gesichts-/Kopftextur.
             mp = next((n for n in nodes if n.class_name == "MeshPart"), None)
             sm = next((n for n in nodes if n.class_name == "SpecialMesh"), None)
