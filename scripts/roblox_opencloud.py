@@ -111,6 +111,14 @@ class BodyPartSpec:
     tint_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
     # Roblox Enum.AlphaMode: overlay | transparency | tintmask | opaque
     alpha_mode: str = "overlay"
+    # Die "RigAttachment"-Positionen dieses Segments im Roblox-Rig-Space
+    # (nach dem Ausrichten auf das Standard-Rig). Roblox baut aus ihnen das
+    # Rig neu auf ("Humanoid:BuildRigFromAttachments()"), die Gelenke liegen
+    # also dort, wo das Asset seine eigenen Attachments hat.
+    rig_attachments: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+    # Dieselben Positionen ohne den Ausgleichs-Versatz: so laesst sich
+    # pruefen, wie weit das Asset vom Standard-Rig abweicht.
+    rig_attachments_raw: dict[str, tuple[float, float, float]] = field(default_factory=dict)
 
 
 @dataclass
@@ -839,6 +847,36 @@ def _absolute_cframe(node: RbxNode) -> tuple[float, ...]:
     return cframe
 
 
+def _part_rig_attachments(
+    node: RbxNode, align_offset: tuple[float, float, float]
+) -> dict[str, tuple[float, float, float]]:
+    """Liest die "RigAttachment"-Positionen eines Segments im Rig-Space.
+
+    Roblox baut das Rig eines Avatar-Koerperteils neu aus diesen Attachments
+    auf (``Humanoid:BuildRigFromAttachments()``). Die Gelenke der Pose liegen
+    deshalb dort, wo das Asset seine eigenen Attachments hat - nicht zwingend
+    auf den Positionen des Standard-Rigs. Der Versatz zum Standard-Rig wird
+    addiert, damit die Positionen im selben Raum liegen wie das Rig.
+    """
+    out: dict[str, tuple[float, float, float]] = {}
+    part_cframe = _absolute_cframe(node)
+    for attachment in node.children:
+        if attachment.class_name != "Attachment":
+            continue
+        name = attachment.name
+        if not name.endswith("RigAttachment"):
+            continue
+        position = cframe_position(
+            compose_cframes(part_cframe, attachment.prop("CFrame", default=IDENTITY_CFRAME))
+        )
+        out[name] = (
+            float(position[0] + align_offset[0]),
+            float(position[1] + align_offset[1]),
+            float(position[2] + align_offset[2]),
+        )
+    return out
+
+
 def _rig_alignment_offset(nodes: list[RbxNode]) -> tuple[float, float, float]:
     """Berechnet den Versatz eines Assets zum offiziellen R15Fixed-Rig.
 
@@ -1017,6 +1055,8 @@ def _load_r15_body_segments(
                 texture_path=texture_path,
                 tint_color=tint,
                 alpha_mode=alpha_mode,
+                rig_attachments=_part_rig_attachments(node, align_offset),
+                rig_attachments_raw=_part_rig_attachments(node, (0.0, 0.0, 0.0)),
             )
         except Exception as exc:
             print(f"[body_part] Segment {name} von {asset_id} konnte nicht geladen werden: {exc}")
