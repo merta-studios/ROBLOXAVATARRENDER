@@ -13,9 +13,10 @@ Koerperteil-Assets im Inventar werden damit nicht mehr durch einfache Quader,
 sondern exakt durch die Standard-R15-Teile ersetzt. Classic-Shirt, -Hose und
 -T-Shirt (sowie das Face-Decal) werden ueber ``scripts/r15_clothing.py`` als
 pro-Teil-Texturen mit neu berechneten UVs aufgebracht. Geladene Accessoires
-sind ebenfalls echte Meshes mit UVs/Texturen. Emote-Keyframes werden mangels
-Armatur ueber Gruppen-Empties naeherungsweise auf die R15-Teile uebertragen --
-bei ``pose = "None"`` wird weder ein Emote geladen noch eine Pose angewendet.
+sind ebenfalls echte Meshes mit UVs/Texturen. Emote-Posen werden ueber die Gelenk-Kette des
+R15-Rigs angewendet (jedes Segment dreht sich um das Gelenk, an dem es im
+Standard-Rig haengt) -- bei ``pose = "None"`` wird weder ein Emote geladen
+noch eine Pose angewendet.
 
 Ausgewertet werden hier: ``classic_pose``, ``classic_emote``,
 ``classic_rotation_deg``, ``classic_abstand_oben``, ``classic_abstand_unten``,
@@ -47,6 +48,7 @@ from scripts.r15_blocky_rig import (
     load_r15_blocky_rig,
 )
 from scripts.r15_clothing import compute_part_uvs
+from scripts.rbx_animation import R6_BONE_PIVOT_ATTACHMENTS, bone_to_r15
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
 from scripts.roblox_opencloud import AvatarBundle
@@ -96,51 +98,57 @@ FALLBACK_ATTACHMENT_BY_TYPE: dict[int, str] = {
     47: "WaistBackAttachment",
 }
 
-# Emote-Keyframes nutzen R6-Begriffe. Jeder Begriff fasst die drei (Torso: zwei)
-# zusammengehoerigen R15-Teile zu einer beweglichen Gruppe zusammen.
-R15_EMOTE_GROUPS: dict[str, tuple[str, ...]] = {
-    "Head": ("Head",),
-    "Torso": ("UpperTorso", "LowerTorso"),
-    "LeftArm": ("LeftUpperArm", "LeftLowerArm", "LeftHand"),
-    "RightArm": ("RightUpperArm", "RightLowerArm", "RightHand"),
-    "LeftLeg": ("LeftUpperLeg", "LeftLowerLeg", "LeftFoot"),
-    "RightLeg": ("RightUpperLeg", "RightLowerLeg", "RightFoot"),
-}
-
-# Drehachse je Emote-Gruppe: das passende Gelenk des offiziellen R15-Rigs.
-# Roblox wendet die R6-Posen einer Emote um genau diese Gelenke an - die
-# R6-Schulter liegt auf der R15-Schulter, das R6-Hueftgelenk auf dem
-# R15-Hueftgelenk, der R6-Hals auf dem R15-Hals. Die Positionen stehen im
-# Rig-Space (Root im Ursprung, Fusssohlen bei y = -2) und stammen aus der
-# offiziellen R15Fixed-Rig-Attachment-Map.
-R15_EMOTE_PIVOT_ATTACHMENTS: dict[str, str] = {
+# Gelenk (Drehpunkt) jedes R15-Segments im offiziellen Rig.
+#
+# Roblox bewegt die Segmente ueber Motor6D-Joints: jedes Segment haengt an
+# genau einem Gelenk und dreht sich genau darum. Die Gelenkpositionen stehen
+# im Rig-Space (HumanoidRootPart im Ursprung, Fusssohlen bei y = -2) und
+# stammen aus der offiziellen R15Fixed-Rig-Attachment-Map
+# (Root/Waist/Neck/Shoulder/Elbow/Wrist/Hip/Knee/Ankle) - also genau den
+# Positionen, die Roblox beim Einhaengen eines Koerperteil-Assets benutzt.
+R15_BONE_PIVOT_ATTACHMENTS: dict[str, str] = {
+    "LowerTorso": "RootRigAttachment",
+    "UpperTorso": "WaistRigAttachment",
     "Head": "NeckRigAttachment",
-    "Torso": "RootRigAttachment",
-    "LeftArm": "LeftShoulderRigAttachment",
-    "RightArm": "RightShoulderRigAttachment",
-    "LeftLeg": "LeftHipRigAttachment",
-    "RightLeg": "RightHipRigAttachment",
+    "LeftUpperArm": "LeftShoulderRigAttachment",
+    "LeftLowerArm": "LeftElbowRigAttachment",
+    "LeftHand": "LeftWristRigAttachment",
+    "RightUpperArm": "RightShoulderRigAttachment",
+    "RightLowerArm": "RightElbowRigAttachment",
+    "RightHand": "RightWristRigAttachment",
+    "LeftUpperLeg": "LeftHipRigAttachment",
+    "LeftLowerLeg": "LeftKneeRigAttachment",
+    "LeftFoot": "LeftAnkleRigAttachment",
+    "RightUpperLeg": "RightHipRigAttachment",
+    "RightLowerLeg": "RightKneeRigAttachment",
+    "RightFoot": "RightAnkleRigAttachment",
 }
 
-# Welches Attachment bewegt sich mit welcher Koerpergruppe? Nur relevant,
-# wenn tatsaechlich ein Emote angewendet wird.
-ATTACHMENT_GROUP: dict[str, str] = {
+# Der Root sitzt im Ursprung des Rig-Space und ist der Drehpunkt des
+# HumanoidRootPart selbst.
+R15_ROOT_JOINT = (0.0, 0.0, 0.0)
+
+# Welches R15-Segment bewegt sich mit welchem Accessoire? Die Accessoires
+# haengen an den Roblox-Attachments; die Zuordnung nennt das Segment, an dem
+# das Attachment im Standard-Rig sitzt. Nur relevant, wenn eine Emote-Pose
+# angewendet wird.
+ATTACHMENT_BONE: dict[str, str] = {
     "HatAttachment": "Head",
     "HairAttachment": "Head",
     "FaceFrontAttachment": "Head",
     "FaceCenterAttachment": "Head",
-    "NeckAttachment": "Torso",
-    "BodyFrontAttachment": "Torso",
-    "BodyBackAttachment": "Torso",
-    "LeftCollarAttachment": "LeftArm",
-    "RightCollarAttachment": "RightArm",
-    "LeftShoulderAttachment": "LeftArm",
-    "RightShoulderAttachment": "RightArm",
-    "LeftGripAttachment": "LeftArm",
-    "RightGripAttachment": "RightArm",
-    "WaistFrontAttachment": "Torso",
-    "WaistCenterAttachment": "Torso",
-    "WaistBackAttachment": "Torso",
+    "NeckAttachment": "UpperTorso",
+    "BodyFrontAttachment": "UpperTorso",
+    "BodyBackAttachment": "UpperTorso",
+    "LeftCollarAttachment": "UpperTorso",
+    "RightCollarAttachment": "UpperTorso",
+    "LeftShoulderAttachment": "LeftUpperArm",
+    "RightShoulderAttachment": "RightUpperArm",
+    "LeftGripAttachment": "LeftHand",
+    "RightGripAttachment": "RightHand",
+    "WaistFrontAttachment": "LowerTorso",
+    "WaistCenterAttachment": "LowerTorso",
+    "WaistBackAttachment": "LowerTorso",
 }
 
 DEFAULT_BODY_RGB: dict[str, tuple[int, int, int]] = {
@@ -593,12 +601,12 @@ def _effective_attachment_name(acc: Any) -> str:
     return FALLBACK_ATTACHMENT_BY_TYPE.get(int(acc.asset_type_id), "HatAttachment")
 
 
-def _accessory_group(acc: Any) -> str:
-    """Koerpergruppe, mit der ein Accessoire bei Emotes mitbewegt wird."""
+def _accessory_bone(acc: Any) -> str:
+    """R15-Segment, mit dem ein Accessoire bei Emotes mitbewegt wird."""
     name = _effective_attachment_name(acc)
     if name == "__LEGACY_HAT__":
         name = "HatAttachment"
-    return ATTACHMENT_GROUP.get(name, "Torso")
+    return ATTACHMENT_BONE.get(name, "UpperTorso")
 
 
 def _accessory_matrix_bl(acc: Any) -> Any:
@@ -644,39 +652,64 @@ def _world_bbox(objects: list[Any]) -> tuple[np.ndarray, np.ndarray] | None:
     return (lo, hi) if found else None
 
 
-def _pose_part_name(pose_name: str) -> str | None:
-    key = str(pose_name).casefold().replace(" ", "").replace("_", "").replace("-", "")
-    if "left" in key and "arm" in key:
-        return "LeftArm"
-    if "right" in key and "arm" in key:
-        return "RightArm"
-    if "left" in key and "leg" in key:
-        return "LeftLeg"
-    if "right" in key and "leg" in key:
-        return "RightLeg"
-    if "torso" in key or "root" in key:
-        return "Torso"
-    if "head" in key or "neck" in key:
-        return "Head"
-    return None
+def _emote_joint_rig(bone_name: str) -> tuple[float, float, float]:
+    """Gelenkposition eines Bones im Roblox-Rig-Space.
 
-
-def _emote_pivot_bl(group_name: str) -> tuple[float, float, float] | None:
-    """Drehpunkt einer Emote-Gruppe im Blender-Raum.
-
-    Die Gelenkpositionen stehen im Roblox-Rig-Space (Root im Ursprung,
-    Fusssohlen bei y = -2). Im Blender-Raum liegt der Avatar-Root bei z = +2
-    (Fusssohlen bei z = 0) und x zeigt nach hinten, daher
-    (x_bl, y_bl, z_bl) = (-x_rbx, z_rbx, y_rbx + 2).
+    Root im Ursprung, Fusssohlen bei y = -2. Fuer R6-Begriffe (alte Emotes)
+    gilt die entsprechende R15-Position: R6-Schulter = R15-Schulter usw.
     """
-    attachment = R15_EMOTE_PIVOT_ATTACHMENTS.get(group_name)
-    if not attachment:
-        return None
+    attachment = R15_BONE_PIVOT_ATTACHMENTS.get(bone_name)
+    if attachment is None:
+        attachment = R6_BONE_PIVOT_ATTACHMENTS.get(bone_name)
+    if attachment is None:
+        return R15_ROOT_JOINT
     pos = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment)
     if not pos:
-        return None
-    x_rbx, y_rbx, z_rbx = (float(v) for v in pos)
-    return (-x_rbx, z_rbx, y_rbx + 2.0)
+        return R15_ROOT_JOINT
+    return (float(pos[0]), float(pos[1]), float(pos[2]))
+
+
+def _rig_to_bl_point(point: tuple[float, float, float] | np.ndarray) -> np.ndarray:
+    """Punkt aus dem Roblox-Rig-Space in den Blender-Raum umrechnen.
+
+    Im Blender-Raum liegt der Avatar-Root bei z = +2 (Fusssohlen bei z = 0)
+    und x zeigt nach hinten, daher (x_bl, y_bl, z_bl) = (-x_rbx, z_rbx, y_rbx+2).
+    """
+    x, y, z = (float(v) for v in point)
+    return np.array([-x, z, y + 2.0], dtype=np.float64)
+
+
+def _emote_world_transforms(
+    clip: Any, time: float
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    """Vorwaertsberechnung der Emote-Pose ueber die Rig-Hierarchie.
+
+    Roblox bewegt die Segmente ueber eine Kette von Gelenken: die Rotation
+    eines Segments ist relativ zum Elternsegment, und jedes Segment dreht
+    sich um das Gelenk, an dem es haengt. Daraus ergibt sich fuer jeden Bone
+    eine Welt-Rotation und die Welt-Position seines Gelenks.
+
+    Rueckgabe: (Welt-Rotationen, Welt-Gelenkpositionen) im Roblox-Rig-Space.
+    """
+    local = clip.local_rotations(time)
+    parents = clip.parents
+    identity = np.eye(3, dtype=np.float64)
+    world_rot: dict[str, np.ndarray] = {}
+    world_joint: dict[str, np.ndarray] = {}
+    for bone in clip.bone_order():
+        r_local = np.asarray(local.get(bone, identity), dtype=np.float64)
+        parent = parents.get(bone)
+        joint = np.asarray(_emote_joint_rig(bone), dtype=np.float64)
+        if parent is None or parent not in world_rot:
+            world_rot[bone] = r_local
+            world_joint[bone] = joint
+            continue
+        parent_joint_rest = np.asarray(_emote_joint_rig(parent), dtype=np.float64)
+        world_rot[bone] = world_rot[parent] @ r_local
+        world_joint[bone] = world_joint[parent] + world_rot[parent] @ (
+            joint - parent_joint_rest
+        )
+    return world_rot, world_joint
 
 
 def _apply_emote_to_r15(
@@ -684,76 +717,59 @@ def _apply_emote_to_r15(
     body_objects: dict[str, Any],
     scene: Any,
 ) -> dict[str, Any]:
-    """Uebertraegt Keyframe-Rotationen auf Gruppen-Empties des R15-Rigs.
+    """Uebertraegt die Emote-Pose auf das R15-Rig der Classic-Szene.
 
-    Es gibt weiterhin keine Armatur mit Knochen-Hierarchie. Statt einzelne
-    Bloecke zu drehen, werden die zusammengehoerigen R15-Teile einer Gruppe
-    (z. B. LeftUpperArm + LeftLowerArm + LeftHand) an ein Empty gehaengt.
-    Die Emote-Rotation wirkt dann auf die ganze Gruppe um das passende
-    Gelenk des offiziellen R15-Rigs (Schulter, Huefte, Hals, Root) - so wie
-    Roblox die R6-Pose der Emote anwendet. Rueckgabe sind die Empties, damit
-    Accessoires mitbewegt werden koennen. Bei ``pose = "None"`` wird diese
-    Funktion nicht aufgerufen.
+    Die Pose wird - wie bei Roblox - ueber die Gelenk-Kette des Rigs
+    berechnet: jedes Segment wird um das Gelenk gedreht, an dem es im
+    Standard-Rig haengt (Schulter, Ellbogen, Huefte, Knie, Hals, Root), und
+    die Kind-Segmente wandern mit. Fuer jedes Segment mit Rotation wird ein
+    Empty angelegt; Accessoires werden daran gehaengt, damit sie mitlaufen.
+
+    Rueckgabe: die Empties je Bone-Name (fuer mitlaufende Accessoires).
     """
-    preview = getattr(classic_emote, "preview_keyframe", None)
-    poses = getattr(preview, "poses", {}) if preview is not None else {}
-    group_empties: dict[str, Any] = {}
+    clip = getattr(classic_emote, "clip", None)
+    if clip is None:
+        return {}
+    time = clip.preview_time()
+    world_rot, world_joint = _emote_world_transforms(clip, time)
 
-    for group_name, part_names in R15_EMOTE_GROUPS.items():
-        group_parts = [body_objects[name] for name in part_names if name in body_objects]
-        if not group_parts:
-            continue
-        bpy.context.view_layer.update()
-        lo = np.array([math.inf, math.inf, math.inf], dtype=np.float64)
-        hi = np.array([-math.inf, -math.inf, -math.inf], dtype=np.float64)
-        for obj in group_parts:
-            corners = np.asarray([tuple(c) for c in obj.bound_box], dtype=np.float64)
-            mw = np.asarray(obj.matrix_world, dtype=np.float64)
-            world = corners @ mw[:3, :3].T + mw[:3, 3]
-            lo = np.minimum(lo, world.min(axis=0))
-            hi = np.maximum(hi, world.max(axis=0))
-        pivot = _emote_pivot_bl(group_name)
-        if pivot is None:
-            # Ohne bekanntes Gelenk bleibt der Mittelpunkt der Gruppe.
-            pivot = ((lo + hi) / 2.0).tolist()
-
-        empty = bpy.data.objects.new(f"ClassicR15Group_{group_name}", None)
-        scene.collection.objects.link(empty)
-        empty.matrix_world = Matrix(_translation_mat4(*pivot).tolist())
-        bpy.context.view_layer.update()
-        inverse = np.linalg.inv(np.asarray(empty.matrix_world, dtype=np.float64))
-        for obj in group_parts:
-            obj.parent = empty
-            obj.matrix_parent_inverse = Matrix(inverse.tolist())
-        group_empties[group_name] = empty
-
+    bone_empties: dict[str, Any] = {}
     applied = 0
-    for pose_name, cf in poses.items():
-        part = _pose_part_name(pose_name)
-        empty = group_empties.get(part) if part else None
-        if empty is None or cf is None or len(cf) != 12:
-            continue
-        r_rbx = np.asarray(cf[3:12], dtype=np.float64).reshape(3, 3)
-        r_bl = T3_RBX_TO_BL @ r_rbx @ T3_RBX_TO_BL
+    for bone, rot_rbx in world_rot.items():
+        r_bl = T3_RBX_TO_BL @ np.asarray(rot_rbx, dtype=np.float64) @ T3_RBX_TO_BL
         rot4 = np.eye(4, dtype=np.float64)
         rot4[:3, :3] = r_bl
-        # Die Position der Pose ist relativ zum Gelenk der Gruppe
-        # (R6: Schulter/Huefte/Hals/Root) und wandert mit der Rotation.
-        pos_rbx = np.asarray(cf[0:3], dtype=np.float64)
-        pos_bl = T3_RBX_TO_BL @ pos_rbx
-        pivot = np.asarray(empty.matrix_world.translation, dtype=np.float64)
-        around_pivot = _translation_mat4(*pivot) @ rot4 @ _translation_mat4(*(-pivot))
-        empty.matrix_world = Matrix(around_pivot.tolist()) @ empty.matrix_world
-        if float(np.linalg.norm(pos_bl)) > 1e-6:
-            empty.matrix_world = (
-                Matrix(_translation_mat4(*pos_bl.tolist()).tolist()) @ empty.matrix_world
+        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone))
+        pivot_world = _rig_to_bl_point(world_joint[bone])
+
+        empty = bpy.data.objects.new(f"ClassicR15Bone_{bone}", None)
+        scene.collection.objects.link(empty)
+        empty.matrix_world = Matrix(
+            (_translation_mat4(*pivot_world.tolist()) @ rot4).tolist()
+        )
+        bone_empties[bone] = empty
+
+        # Das Koerpersegment selbst: um das Gelenk drehen und das Gelenk
+        # an seine neue Position verschieben.
+        part_name = bone_to_r15(bone)
+        obj = body_objects.get(part_name) if part_name else None
+        if obj is not None:
+            rest = np.asarray(obj.matrix_world, dtype=np.float64)
+            posed = (
+                _translation_mat4(*pivot_world.tolist())
+                @ rot4
+                @ _translation_mat4(*(-pivot_rest.tolist()))
+                @ rest
             )
+            obj.matrix_world = Matrix(posed.tolist())
         applied += 1
+
+    bpy.context.view_layer.update()
     print(
-        f"[classic] Emote-Pose auf {applied} von {len(group_empties)} "
-        "R15-Koerpergruppen angewendet (Gruppen-Empties statt Armatur)."
+        f"[classic] Emote-Pose aus {clip.source_format} auf {applied} Bones angewendet "
+        f"(Vorschau-Moment t={time:.3f}s)."
     )
-    return group_empties
+    return bone_empties
 
 
 def render_classic_scene(
@@ -787,7 +803,7 @@ def render_classic_scene(
     render_objects: list[Any] = []
     body_objects: dict[str, Any] = {}
     accessory_parents: list[tuple[Any, str]] = []
-    group_empties: dict[str, Any] = {}
+    bone_empties: dict[str, Any] = {}
 
     # Jedes Inventar-Mesh ist lokal zu genau einem R15-Segment. Fehlende
     # Segmente behalten ihren offiziellen Blocky-Fallback und ihre Kleidung.
@@ -853,15 +869,15 @@ def render_classic_scene(
         scene.collection.objects.link(obj)
         obj.matrix_world = _accessory_matrix_bl(acc)
         render_objects.append(obj)
-        accessory_parents.append((obj, _accessory_group(acc)))
+        accessory_parents.append((obj, _accessory_bone(acc)))
         accessory_count += 1
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote") and classic_emote is not None:
-        group_empties = _apply_emote_to_r15(classic_emote, body_objects, scene)
+        bone_empties = _apply_emote_to_r15(classic_emote, body_objects, scene)
         bpy.context.view_layer.update()
-        for obj, group_name in accessory_parents:
-            empty = group_empties.get(group_name)
+        for obj, bone_name in accessory_parents:
+            empty = bone_empties.get(bone_name)
             if empty is None:
                 continue
             inverse = np.linalg.inv(np.asarray(empty.matrix_world, dtype=np.float64))
@@ -908,7 +924,7 @@ def render_classic_scene(
     # ein Gruppen-Empty gehaengt wurden, folgen ihrem Parent automatisch.
     transform_targets = [
         obj for obj in render_objects if getattr(obj, "parent", None) is None
-    ] + list(group_empties.values())
+    ] + list(bone_empties.values())
     for obj in transform_targets:
         obj.matrix_world = transform_bl @ obj.matrix_world
     bpy.context.view_layer.update()
