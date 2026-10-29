@@ -223,7 +223,7 @@ jobs:
           cp -f /tmp/blender_stderr-*.log /tmp/debug_out/ 2>/dev/null || true
           cp -f /tmp/render_status-*.json /tmp/debug_out/ 2>/dev/null || true
           cp -f /tmp/fatal_error.txt /tmp/debug_out/ 2>/dev/null || true
-          cp -f /tmp/render_out/*.png /tmp/debug_out/ 2>/dev/null || true
+          cp -f /tmp/render_out/*.png /tmp/render_out/*.json /tmp/debug_out/ 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           {

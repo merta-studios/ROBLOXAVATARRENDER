@@ -255,6 +255,81 @@ class BoneMappingTests(unittest.TestCase):
         self.assertEqual(ra.bone_to_r15("Torso"), "UpperTorso")
         self.assertIsNone(ra.bone_to_r15("Klingon"))
 
+    def test_motor6d_joint_names_map_to_parts(self):
+        # Roblox spricht die Gelenke des R15-Rigs an ("Left Shoulder");
+        # jedes Gelenk bewegt genau ein Teil.
+        self.assertEqual(ra.bone_to_r15("Left Shoulder"), "LeftUpperArm")
+        self.assertEqual(ra.bone_to_r15("LeftShoulder"), "LeftUpperArm")
+        self.assertEqual(ra.bone_to_r15("Left Elbow"), "LeftLowerArm")
+        self.assertEqual(ra.bone_to_r15("Left Wrist"), "LeftHand")
+        self.assertEqual(ra.bone_to_r15("Left Hip"), "LeftUpperLeg")
+        self.assertEqual(ra.bone_to_r15("Left Knee"), "LeftLowerLeg")
+        self.assertEqual(ra.bone_to_r15("Left Ankle"), "LeftFoot")
+        self.assertEqual(ra.bone_to_r15("Right Shoulder"), "RightUpperArm")
+        self.assertEqual(ra.bone_to_r15("Neck"), "Head")
+        self.assertEqual(ra.bone_to_r15("Waist"), "UpperTorso")
+        self.assertEqual(ra.bone_to_r15("Root"), "LowerTorso")
+
+    def test_normalizes_clip_bones_and_parents(self):
+        clip = ra.AnimationClip(
+            source_format="Test",
+            tracks={
+                "Root": ra.BoneTrack(name="Root", parent=None),
+                "Waist": ra.BoneTrack(name="Waist", parent="Root"),
+                "Left Shoulder": ra.BoneTrack(name="Left Shoulder", parent="Waist"),
+                "Left Elbow": ra.BoneTrack(name="Left Elbow", parent="Left Shoulder"),
+            },
+        )
+        normalized = ra.normalize_clip_to_r15(clip)
+        self.assertEqual(
+            sorted(normalized.tracks),
+            ["LeftLowerArm", "LeftUpperArm", "LowerTorso", "UpperTorso"],
+        )
+        self.assertEqual(normalized.tracks["LeftUpperArm"].parent, "UpperTorso")
+        self.assertEqual(normalized.tracks["LeftLowerArm"].parent, "LeftUpperArm")
+        self.assertEqual(normalized.tracks["UpperTorso"].parent, "LowerTorso")
+
+    def test_joint_named_pose_uses_r15_pivots(self):
+        # Eine Pose mit Gelenk-Namen muss dieselben Gelenkpositionen
+        # ergeben wie eine Pose mit Teil-Namen.
+        from scripts.classic_render import _emote_world_transforms
+
+        def _clip(names):
+            tracks = {}
+            for name, parent in names:
+                track = ra.BoneTrack(name=name, parent=parent)
+                track.rotation_curves = {
+                    "X": [ra.CurveKey(time=0.0, value=0.0)],
+                    "Y": [ra.CurveKey(time=0.0, value=0.0)],
+                    "Z": [ra.CurveKey(time=0.0, value=0.0)],
+                }
+                tracks[name] = track
+            return ra.AnimationClip(source_format="Test", tracks=tracks)
+
+        parts = _clip(
+            [
+                ("HumanoidRootPart", None),
+                ("LowerTorso", "HumanoidRootPart"),
+                ("UpperTorso", "LowerTorso"),
+                ("LeftUpperArm", "UpperTorso"),
+            ]
+        )
+        joints = _clip(
+            [
+                ("Root", None),
+                ("Waist", "Root"),
+                ("Left Shoulder", "Waist"),
+            ]
+        )
+        _rot_a, joint_a = _emote_world_transforms(parts, 0.0)
+        _rot_b, joint_b = _emote_world_transforms(joints, 0.0)
+        np.testing.assert_allclose(
+            joint_a["LeftUpperArm"], joint_b["LeftUpperArm"], atol=1e-9
+        )
+        np.testing.assert_allclose(
+            joint_a["LeftUpperArm"], [-1.0, 1.763, 0.0], atol=1e-9
+        )
+
     def test_r6_pivots_use_r15_joints(self):
         self.assertEqual(
             ra.R6_BONE_PIVOT_ATTACHMENTS["Left Arm"], "LeftShoulderRigAttachment"

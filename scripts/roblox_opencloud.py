@@ -67,6 +67,20 @@ RIGID_ACCESSORY_TYPE_IDS = {
     47,  # WaistAccessory
 }
 
+# Asset-Typ 51 = "IdleAnimation": die Leerlauf-Animation des Avatars.
+# Roblox benutzt genau diese Animation fuer die 2D-Vorschau im Profil
+# (Profilbild): "the idle animation is shown on the player's profile if the
+# user has one equipped" (Roblox Wiki "Animation pack") bzw. "if there's no
+# emote selected, the avatar is posed as the equipped idle animation's
+# thumbnail" (DevForum 2625157).
+IDLE_ANIMATION_TYPE_ID = 51
+
+# Roblox' Standard-Idle "Rthro Idle" (Asset-Typ 51, von Roblox selbst).
+# Roblox legt sie fuer Profilbilder zu, wenn kein eigenes Idle ausgeruestet
+# ist (DevForum 2073841: "full body thumbnail generation ... use the Rthro
+# idle pose when an idle from another bundle is not equipped").
+DEFAULT_IDLE_ANIMATION_ASSET_ID = 2510235063
+
 class PipelineError(RuntimeError):
     """Klarer, nutzer- und agentenlesbarer Fehler für die GitHub Workflow-Übersicht."""
 
@@ -139,6 +153,9 @@ class AvatarBundle:
     # Nur für fehlende Teile wird der blocky rig als Fallback verwendet.
     body_parts: dict[str, BodyPartSpec] = field(default_factory=dict)
     r15_clothing_overlays: dict[str, str] = field(default_factory=dict)
+    # ClassicType: ausgeruestete Leerlauf-Animation (Asset-Typ 51). Sie
+    # bestimmt die Pose der 2D-Profil-Vorschau.
+    idle_animation_asset_id: int | None = None
 
 
 @dataclass
@@ -340,52 +357,6 @@ class RobloxOpenCloudClient:
         eines Nutzers. Das ist der funktionierende Endpunkt fuer ClassicType
         (v2 Avatar API, funktioniert ohne Cookie fuer oeffentliche Nutzerdaten)."""
         return self.fetch_avatar_metadata(user_id)
-
-    def fetch_equipped_emote(self, user_id: int) -> dict[str, Any] | None:
-        """Liefert die am Spieleravatar ausgerüstete Emote (Profilpose).
-
-        Roblox stattet die Emotes direkt am Avatar aus (bis zu acht Slots).
-        Die **öffentliche** Avatar-API liefert genau diese ausgerüsteten Emotes
-        im Feld ``emotes``; ``position`` ist die Slot-Nummer (1-basiert).
-        Slot 1 ist der Emote, den Roblox auch als Profilpose benutzt
-        (Avatar-Editor -> "Body" -> "Emotes" -> "Profilbild-Pose").
-
-        Der ältere Endpunkt ``/v1/avatar/thumbnail-customizations`` liefert
-        zwar direkt die Profilpose, verlangt aber ein .ROBLOSECURITY-Cookie
-        des eigenen Accounts und antwortet mit einem Open Cloud API Key
-        deshalb immer mit HTTP 401 - er ist ohne Cookie nicht nutzbar.
-        """
-        try:
-            meta = self.fetch_avatar_metadata(user_id)
-        except PipelineError as exc:
-            print(f"[avatar] Ausgeruestete Emote konnte nicht abgefragt werden: {exc}")
-            return None
-
-        emotes = [e for e in (meta.get("emotes") or []) if isinstance(e, dict)]
-        if not emotes:
-            print("[avatar] Am Avatar ist keine Emote ausgeruestet - Pose bleibt 'None'.")
-            return None
-
-        def _slot(entry: dict[str, Any]) -> int:
-            try:
-                return int(entry.get("position") or 0)
-            except (TypeError, ValueError):
-                return 0
-
-        emotes.sort(key=_slot)
-        first = emotes[0]
-        try:
-            asset_id = int(first.get("assetId") or 0)
-        except (TypeError, ValueError):
-            asset_id = 0
-        if asset_id <= 0:
-            print("[avatar] Ausgeruestete Emote hat keine gueltige Asset-ID - Pose bleibt 'None'.")
-            return None
-        return {
-            "emote_asset_id": asset_id,
-            "emote_name": str(first.get("assetName") or ""),
-            "emote_slot": _slot(first),
-        }
 
     def load_animation(self, asset_id: int, work_dir: Path) -> EmoteAnimation | None:
         """Laedt eine Animation (Asset-Typ Animation/EmoteAnimation) per
@@ -1096,6 +1067,15 @@ def load_avatar_bundle(
         atype = int((item.get("assetType") or {}).get("id") or 0)
         by_type.setdefault(atype, []).append(item)
 
+    # Die ausgeruestete Leerlauf-Animation (Asset-Typ 51) bestimmt die Pose
+    # der 2D-Profil-Vorschau auf roblox.com.
+    idle_animation_asset_id: int | None = None
+    if by_type.get(IDLE_ANIMATION_TYPE_ID):
+        try:
+            idle_animation_asset_id = int(by_type[IDLE_ANIMATION_TYPE_ID][0]["id"])
+        except (KeyError, TypeError, ValueError):
+            idle_animation_asset_id = None
+
     # 1. Kleidung laden & R6 Körpertextur zusammensetzen
     shirt_img = client.fetch_image(int(by_type[11][0]["id"])) if by_type.get(11) else None
     pants_img = client.fetch_image(int(by_type[12][0]["id"])) if by_type.get(12) else None
@@ -1398,4 +1378,5 @@ def load_avatar_bundle(
         r15_part_textures=r15_part_textures,
         body_parts=body_parts,
         r15_clothing_overlays=r15_clothing_overlays,
+        idle_animation_asset_id=idle_animation_asset_id,
     )

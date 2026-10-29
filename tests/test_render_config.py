@@ -249,6 +249,41 @@ class RenderConfigTests(unittest.TestCase):
             self.assertEqual(pose, "None")
             self.assertEqual(empty_client.calls, [])
 
+            # pose = "Equipped" ist die Profilpose: Roblox zeigt im Profil die
+            # 2D-Vorschau in der Leerlauf-Animation des Avatars (Asset-Typ 51).
+            # Ausgeruestete Emotes (Slot 1) werden NICHT verwendet.
+            from scripts.roblox_opencloud import DEFAULT_IDLE_ANIMATION_ASSET_ID
+
+            idle_bundle = SimpleNamespace(user_id=42, idle_animation_asset_id=4242)
+            idle_client = SpyClient()
+            with patch("builtins.print"):
+                pose, emote, asset_id = resolve_classic_pose(
+                    config={"pose": "Equipped"},
+                    bundle=idle_bundle,
+                    client=idle_client,
+                    work_dir=work_dir,
+                )
+            self.assertEqual(pose, "Equipped")
+            self.assertIsNotNone(emote)
+            self.assertEqual(idle_client.calls, [("load", 4242)])
+            self.assertEqual(asset_id, 4242)
+
+            # Ohne eigenes Idle nimmt Roblox seine Standard-Idle ("Rthro Idle").
+            fallback_bundle = SimpleNamespace(user_id=42, idle_animation_asset_id=None)
+            fallback_client = SpyClient()
+            with patch("builtins.print"):
+                pose, emote, asset_id = resolve_classic_pose(
+                    config={"pose": "Equipped"},
+                    bundle=fallback_bundle,
+                    client=fallback_client,
+                    work_dir=work_dir,
+                )
+            self.assertEqual(pose, "Equipped")
+            self.assertEqual(
+                fallback_client.calls, [("load", DEFAULT_IDLE_ANIMATION_ASSET_ID)]
+            )
+            self.assertEqual(asset_id, DEFAULT_IDLE_ANIMATION_ASSET_ID)
+
         # Die echte ClassicType/configs.toml darf die ClassicType-Optionen nicht
         # versehentlich als TOML-Unterschluessel von [outline] enthalten.
         import tomllib
