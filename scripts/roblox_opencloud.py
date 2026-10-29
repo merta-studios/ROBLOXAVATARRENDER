@@ -25,6 +25,7 @@ from scripts.r15_clothing import (
 from scripts.rbx_formats import (
     IDENTITY_CFRAME,
     MeshData,
+    RBXM_MAGIC,
     RbxNode,
     ZSTD_MAGIC,
     compose_cframes,
@@ -36,6 +37,9 @@ from scripts.rbx_formats import (
 )
 
 DEFAULT_SMILE_ASSET_ID = 144075659
+
+# TEMPORAERE DIAGNOSE (Emote-Ladepfad) -- wird nach der Analyse wieder entfernt.
+EMOTE_DIAGNOSTICS: dict[str, Any] = {}
 
 # Roblox Enum.AlphaMode (siehe create.roblox.com/docs/reference/engine/enums/AlphaMode)
 ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmask", 3: "opaque"}
@@ -150,6 +154,18 @@ class EmoteAnimation:
         if not self.keyframes:
             return None
         return self.keyframes[0]
+
+
+def _max_rotation_deviation(poses: dict[str, tuple[float, ...]]) -> float:
+    """Groesste Rotationsabweichung einer Pose von der Identitaet (Grad)."""
+    best = 0.0
+    for cf in poses.values():
+        if not cf or len(cf) != 12:
+            continue
+        rot = np.asarray(cf[3:12], dtype=np.float64).reshape(3, 3)
+        cos = float(np.clip((np.trace(rot) - 1.0) / 2.0, -1.0, 1.0))
+        best = max(best, float(np.degrees(np.arccos(cos))))
+    return best
 
 
 def _sanitize_secret(text: str, secret: str) -> str:
@@ -364,19 +380,57 @@ class RobloxOpenCloudClient:
         komplett aus der API, der verwendete Moment ist die erste Keyframe
         (Zeit 0.0), also genau der Anfang der Emote-Vorschau.
         """
+        info: dict[str, Any] = {"asset_id": asset_id}
+        EMOTE_DIAGNOSTICS["emote"] = info
         try:
             raw = self.fetch_asset_bytes(asset_id)
         except PipelineError as exc:
+            info["fetch_error"] = str(exc)[:600]
             print(f"[emote] Emote {asset_id} konnte nicht geladen werden: {exc}")
             return None
 
-        roots = parse_rbx_model(raw)
+        info["bytes"] = len(raw)
+        info["head_hex"] = raw[:32].hex()
+        info["is_rbxm"] = raw[:14] == RBXM_MAGIC
+        try:
+            roots = parse_rbx_model(raw)
+        except Exception as exc:
+            info["parse_error"] = f"{type(exc).__name__}: {exc}"
+            print(f"[emote] Emote {asset_id} konnte nicht geparst werden: {exc}")
+            return None
+
+        info["root_count"] = len(roots)
+        info["tree"] = [
+            {
+                "class": rt.class_name,
+                "name": rt.name,
+                "props": sorted(rt.props.keys()),
+                "child_count": len(rt.children),
+                "children": [
+                    {
+                        "class": ch.class_name,
+                        "name": ch.name,
+                        "props": sorted(ch.props.keys())[:24],
+                        "child_count": len(ch.children),
+                        "grandchildren": [
+                            {"class": gc.class_name, "name": gc.name, "props": sorted(gc.props.keys())[:24]}
+                            for gc in ch.children[:6]
+                        ],
+                    }
+                    for ch in rt.children[:8]
+                ],
+            }
+            for rt in roots[:4]
+        ]
+
         nodes: list[RbxNode] = []
         for rt in roots:
             nodes.append(rt)
             nodes.extend(rt.descendants())
 
         sequences = [n for n in nodes if n.class_name == "KeyframeSequence"]
+        info["keyframe_sequence_count"] = len(sequences)
+        info["all_classes"] = sorted({n.class_name for n in nodes})
         if not sequences:
             print(f"[emote] Emote {asset_id} enthaelt keine KeyframeSequence.")
             return None
@@ -396,6 +450,19 @@ class RobloxOpenCloudClient:
             keyframes.append(EmoteKeyframe(time=time, poses=poses))
 
         keyframes.sort(key=lambda kf: kf.time)
+        info["keyframe_count"] = len(keyframes)
+        info["pose_names"] = sorted({name for kf in keyframes for name in kf.poses})
+        info["frames"] = [
+            {"time": round(kf.time, 3), "max_dev": round(_max_rotation_deviation(kf.poses), 1)}
+            for kf in keyframes
+        ]
+        info["keyframes"] = [
+            {
+                "time": round(kf.time, 3),
+                "poses": {name: [round(float(v), 4) for v in cf] for name, cf in kf.poses.items()},
+            }
+            for kf in keyframes[:6]
+        ]
         if not keyframes:
             print(f"[emote] Emote {asset_id} enthaelt keine Keyframes.")
             return None
@@ -469,6 +536,8 @@ class RobloxOpenCloudClient:
 
         url = f"https://apis.roblox.com/asset-delivery-api/v1/assetId/{asset_id}"
         resp = self._request("GET", url, use_api_key=True)
+        delivery = EMOTE_DIAGNOSTICS.setdefault("delivery", {})
+        delivery["opencloud_status"] = resp.status_code
 
         if resp.status_code in (401, 403):
             detail = _sanitize_secret(resp.text[:300], self.api_key)
@@ -492,6 +561,14 @@ class RobloxOpenCloudClient:
         if resp.status_code == 200:
             try:
                 payload = resp.json()
+                delivery["opencloud_keys"] = sorted(payload.keys())
+                delivery["locations"] = [
+                    {
+                        "assetFormat": loc.get("assetFormat"),
+                        "url": str(loc.get("location") or "").split("?")[0],
+                    }
+                    for loc in (payload.get("locations") or [])
+                ]
                 location = payload.get("location")
                 if not location and payload.get("locations"):
                     location = payload["locations"][0].get("location")
@@ -505,6 +582,7 @@ class RobloxOpenCloudClient:
         # Fallback auf öffentlichen v2-Endpunkt für eingebaute Standard-Assets
         if not location:
             anon = self._request("GET", f"https://assetdelivery.roblox.com/v2/assetId/{asset_id}")
+            delivery["public_status"] = anon.status_code
             if anon.status_code == 200:
                 payload = anon.json()
                 location = payload.get("location")
@@ -519,12 +597,16 @@ class RobloxOpenCloudClient:
 
         # Niemals den API Key an das CDN mitsenden!
         cdn_resp = self._request("GET", location, use_api_key=False, timeout=30)
+        delivery["cdn_status"] = cdn_resp.status_code
+        delivery["cdn_content_type"] = cdn_resp.headers.get("Content-Type")
         if cdn_resp.status_code != 200:
             raise PipelineError(
                 f"CDN-Download für Asset {asset_id} fehlgeschlagen (HTTP {cdn_resp.status_code})."
             )
 
         data = _decompress_http_bytes(cdn_resp.content)
+        delivery["bytes"] = len(data)
+        delivery["head_hex"] = data[:32].hex()
         self._asset_cache[asset_id] = data
         return data
 
