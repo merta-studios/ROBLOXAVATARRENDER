@@ -1223,6 +1223,36 @@ def render_classic_scene(
         f"Rand unten={margin_bottom_world:.3f} ({margin_bottom_world/final_height*100:.1f}%) Welt-Einheiten."
     )
 
+    # Diagnose: Welt-Bounding-Box jedes Koerperteils und seine Textur. Damit
+    # laesst sich pruefen, ob ein Inventar-Koerperteil an der richtigen Stelle
+    # sitzt (und ob seine eigene Textur verwendet wird).
+    for obj in render_objects:
+        if getattr(obj, "type", None) != "MESH":
+            continue
+        try:
+            corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+        except Exception:
+            continue
+        if not corners:
+            continue
+        xs = [c.x for c in corners]
+        ys = [c.y for c in corners]
+        zs = [c.z for c in corners]
+        tex = "-"
+        mats = getattr(obj.data, "materials", None) or []
+        for slot in mats:
+            if slot and slot.node_tree:
+                for node in slot.node_tree.nodes:
+                    if node.type == "TEX_IMAGE" and node.image:
+                        tex = node.image.name
+                        break
+                if tex != "-":
+                    break
+        print(
+            f"[classic]   {obj.name:22s} x[{min(xs):+.2f},{max(xs):+.2f}] "
+            f"y[{min(ys):+.2f},{max(ys):+.2f}] z[{min(zs):+.2f},{max(zs):+.2f}] tex={tex}"
+        )
+
     # 4b. Studio-Lichter dynamisch auf den Avatar-Mittelpunkt ausrichten
     avatar_center = Vector(tuple(float(v) for v in final_center))
     def add_area_light(name: str, loc: tuple[float, float, float], energy: float, size: float) -> None:
