@@ -51,6 +51,14 @@ Das kompakte R15-Asset lässt sich bei Bedarf aus der mitgelieferten Original-FB
 
 Umrandungs-Einstellungen (`[outline]`) funktionieren wie bei HearthandsType.
 
+### Mesh-Texturen und UV-Ausrichtung
+
+Roblox-Meshes speichern ihre Texturkoordinaten je nach Formatversion unterschiedlich: `version 1.00`/`1.01` (ASCII) speichert `v` invertiert, `version 2.00` und neuer speichert `u`/`v` roh. Der Parser rechnet deshalb genau einmal in den Blender-Raum um (`1 - v`), unabhängig davon, ob das Mesh aus einer Körperteil-, Kopf- oder Accessoire-Datei stammt. Dasselbe gilt für `SurfaceAppearance.ColorMap`, `TextureID` und die CharacterMesh-Textur – die Texturquelle ändert die Ausrichtung nicht.
+
+Zur Kontrolle protokolliert der Lader für jedes Mesh eine Zeile `[mesh] <Quelle>: version=… verts=… faces=… u=… v=…` und für jedes Körperteil seine Texturquelle. Mit `DEBUG_MESH_DUMP=1` werden die Rohdaten zusätzlich als `mesh_*.mesh` abgelegt; der Render-Workflow tut das und veröffentlicht sie im Diagnose-Tag.
+
+**Nicht am `v`-Vorzeichen drehen, ohne ein Roblox-Referenzbild zu prüfen.** Beispiel: Das Körperteil „Cute Mini Green Coconut – Right Leg“ (100234186631845) sieht im Render wie ein grauer Klotz aus, obwohl der zugehörige Texturatlas eine große grüne Kokosnuss zeigt. Die grüne Insel gehört aber zu den *anderen* Assets desselben Bundles; Roblox' eigenes Render dieses Assets (`thumbnails.roblox.com/v1/assets?assetIds=100234186631845`) zeigt ein **dunkles, fast schwarzes Bein** – exakt das, was dieser Renderer ausgibt. Der Atlasschlüssel ist irreführend, die UV-Ausrichtung ist korrekt.
+
 ## Lokale Prüfung
 
 ```bash
