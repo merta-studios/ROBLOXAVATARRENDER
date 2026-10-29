@@ -49,10 +49,12 @@ animation_asset_id = 658830056
 # Korblox Deathspeaker Right Leg (Asset-ID 139607718, offiziell von Roblox:
 # https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg).
 # Das echte Korblox-Bundle kostet 17.000 Robux und ist für viele nicht
-# bezahlbar, ist aber ein beliebter GFX-Look. Wenn true, wird das komplette
-# rechte Bein (Oberbein, Unterbein und Fuß) im Render durch das Korblox-Bein
-# ersetzt (mit dessen eigenen Materialien/Texturen). Trägt der Avatar das Bein
-# ohnehin im Inventar, steht es auch ohne diese Option vollständig im Render.
+# bezahlbar, ist aber ein beliebter GFX-Look. Wenn true, wird das rechte
+# Oberbein im Render durch den Korblox-Stumpf ersetzt (mit dessen eigenen
+# Materialien/Texturen). Unterbein und Fuß entfallen dabei ersatzlos - das ist
+# der "legless"-Look des Bundles; ein Blocky-Ersatz wird dort NICHT
+# eingesetzt. Trägt der Avatar das Bein ohnehin im Inventar, gilt derselbe
+# Look auch ohne diese Option.
 korblox = false
 
 # Headless Horseman-Look: Wenn true, wird der Kopf unsichtbar gemacht und

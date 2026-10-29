@@ -54,10 +54,35 @@ ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmas
 # https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg
 KORBLOX_RIGHT_LEG_ASSET_ID = 139607718
 
-# Die drei R15-Segmente des Korblox-Bein-Assets. Roblox verwirft bei einem
-# Bein-Asset kein Segment - auch beim Korblox-Bein nicht (siehe
-# _load_r15_body_segments).
-KORBLOX_LEG_SEGMENT_NAMES = ("RightUpperLeg", "RightLowerLeg", "RightFoot")
+# Das Korblox-Bein ist der "legless"-Look: Der Avatar traegt nur den Stumpf
+# des rechten Oberbeins (mit dem Knochensporn); Unterbein und Fuss fehlen
+# komplett. Das Asset 139607718 enthaelt zwar auch diese beiden Segmente,
+# aber nur als kleine, frei schwebende Bruchstuecke. Roblox zeigt unter dem
+# Stumpf nichts - deshalb werden sie weder uebernommen noch durch den
+# Blocky-Rig ersetzt, sondern ersatzlos ausgeblendet.
+KORBLOX_LEG_SEGMENT_NAMES = ("RightUpperLeg",)
+
+# Segmente des Avatars, die das Korblox-Bein ersatzlos ausblendet (siehe
+# korblox_hidden_segments). Sie stehen danach weder aus dem Asset noch als
+# Blocky-Fallback im Render - unter dem Stumpf ist schlicht nichts.
+KORBLOX_HIDDEN_SEGMENT_NAMES = ("RightLowerLeg", "RightFoot")
+
+# R15-Segment, das beim Korblox-Asset der sichtbare Stumpf ist.
+LEG_UPPER_SEGMENT_NAMES = ("LeftUpperLeg", "RightUpperLeg")
+
+
+def korblox_hidden_segments(asset_id: int) -> set[str]:
+    """Segmente, die ein Koerperteil-Asset ersatzlos entfernt.
+
+    Nur das Korblox-Bein (139607718) blendet Teile aus: Unterbein und Fuss
+    sind Teil des "legless"-Looks und duerfen weder aus dem Asset noch als
+    Blocky-Fallback im Render stehen. Fuer jedes andere Asset ist die Menge
+    leer.
+    """
+    if int(asset_id) == KORBLOX_RIGHT_LEG_ASSET_ID:
+        return set(KORBLOX_HIDDEN_SEGMENT_NAMES)
+    return set()
+
 
 # R6-kompatible starre Accessoire-Typen (Layered Clothing 64..72 wird in R6 bewusst ignoriert)
 RIGID_ACCESSORY_TYPE_IDS = {
@@ -170,6 +195,10 @@ class AvatarBundle:
     # ClassicType: Körperteile aus dem Inventar (Asset-Typen 17, 27-31).
     # Nur für fehlende Teile wird der blocky rig als Fallback verwendet.
     body_parts: dict[str, BodyPartSpec] = field(default_factory=dict)
+    # ClassicType: Segmente, die ein Asset ersatzlos entfernt (Korblox:
+    # Unterbein und Fuss). Sie werden weder ersetzt noch als Blocky-Fallback
+    # gerendert.
+    hidden_body_parts: set[str] = field(default_factory=set)
     r15_clothing_overlays: dict[str, str] = field(default_factory=dict)
     # ClassicType: ausgeruestete Leerlauf-Animation (Asset-Typ 51). Sie
     # bestimmt die Pose der 2D-Profil-Vorschau.
@@ -448,16 +477,15 @@ class RobloxOpenCloudClient:
     load_emote_animation = load_animation
 
     def load_korblox_leg_segments(self, work_dir: Path) -> dict[str, BodyPartSpec]:
-        """Laedt die R15-Segmente des Korblox Deathspeaker Right Leg.
+        """Laedt das sichtbare Segment des Korblox Deathspeaker Right Leg.
 
-        Das Asset (139607718) liefert Oberbein, Unterbein und Fuss als echte
-        R15-Segmente im Ordner "R15Fixed"; alle drei gehoeren zum
-        Korblox-Bein. Sie liegen auf dem Standard-R15-Skelett (Huefte 0,
-        Knie -0.822, Fussgelenk -1.748) und sind nur starr nach unten
-        versetzt - der Loader zieht sie ueber das Hueftgelenk wieder auf das
-        Standard-Rig. Nur das Oberbein zu uebernehmen liesse Unterbein und
-        Fuss als Blocky-Fallback im Bild stehen (genau das war der Fehler im
-        ClassicType-Render).
+        Das Asset (139607718) ist der "legless"-Look: sichtbar ist nur der
+        Stumpf des rechten Oberbeins (Oberbein + Knochensporn). Unterbein und
+        Fuss des Assets sind kleine, frei schwebende Bruchstuecke; Roblox
+        zeigt sie nicht. Sie werden deshalb nicht geladen - der Renderer
+        blendet die beiden Segmente des Avatars stattdessen ersatzlos aus
+        (``KORBLOX_HIDDEN_SEGMENT_NAMES``), damit dort kein Blocky-Fallback
+        steht.
         """
         raw = self.fetch_asset_bytes(KORBLOX_RIGHT_LEG_ASSET_ID)
         roots = parse_rbx_model(raw)
@@ -1230,13 +1258,24 @@ def _load_r15_body_segments(
     # Bein-Paket liefert also alle drei Segmente - sie sind echte Teile des
     # Avatars und duerfen nicht durch den Blocky-Fallback ersetzt werden.
     #
-    # Das gilt genauso fuer das Korblox-Paket (139607718): Seine Segmente
-    # Oberbein, Unterbein und Fuss liegen im Ordner "R15Fixed" auf dem
-    # Standard-R15-Skelett (Knie -0.822, Fussgelenk -1.748) und sind nur
-    # starr nach unten versetzt. Wird dort nur das Oberbein uebernommen,
-    # rendert der Avatar darunter ein Blocky-Unterbein und einen
-    # Blocky-Fuss, obwohl er Korblox traegt. Deshalb gilt fuer jedes
-    # Bein-Asset dieselbe Regel: alle gelieferten Segmente bleiben.
+    # Einzige Ausnahme ist das Korblox-Bein (139607718): Es ist der
+    # "legless"-Look. Sichtbar ist nur der Stumpf des Oberbeins; Unterbein
+    # und Fuss sind im Asset nur kleine, frei schwebende Bruchstuecke, die
+    # Roblox nicht zeigt. Sie werden deshalb nicht uebernommen - und
+    # duerfen auch nicht auf den Blocky-Rig zurueckfallen. Der Renderer
+    # blendet diese beiden Segmente des Avatars stattdessen ersatzlos aus
+    # (``korblox_hidden_segments``). Diese Regel gilt nur fuer dieses eine
+    # Asset, nicht fuer jedes Bein-Paket.
+    if asset_id == KORBLOX_RIGHT_LEG_ASSET_ID and len(chosen) > 1:
+        upper = [node for node in chosen if node.name in LEG_UPPER_SEGMENT_NAMES]
+        if len(upper) == 1:
+            dropped = sorted(node.name for node in chosen if node is not upper[0])
+            candidates = {upper[0].name: candidates[upper[0].name]}
+            chosen = [upper[0]]
+            print(
+                f"[body_part] Asset {asset_id}: Korblox-Bein - nur der Oberbein-Stumpf "
+                f"({upper[0].name}) ist sichtbar; {', '.join(dropped)} entfallen ersatzlos."
+            )
 
     align_offset = _rig_alignment_offset(chosen)
     root_joint = _rig_root_joint(_rig_joint_attachments(chosen))
@@ -1669,6 +1708,9 @@ def load_avatar_bundle(
     # Jedes R15-Segment besitzt ein eigenes Mesh und eigene Materialdaten.
     # Fehler einzelner Segmente duerfen die uebrigen nicht unterdruecken.
     body_parts: dict[str, BodyPartSpec] = {}
+    # Segmente, die ein Asset ersatzlos entfernt (Korblox: Unterbein, Fuss).
+    # Sie werden weder gerendert noch durch den Blocky-Rig ersetzt.
+    hidden_body_parts: set[str] = set()
     if gfx_type == "ClassicType":
         # Der DynamicHead (Asset-Typ 79) ist der echte Roblox-Kopf des
         # Avatars: ein eigenes Mesh mit eingebautem Gesicht, das an seinen
@@ -1701,9 +1743,22 @@ def load_avatar_bundle(
             aid = int(item["id"])
             try:
                 roots = parse_rbx_model(client.fetch_asset_bytes(aid))
-                body_parts.update(
-                    _load_r15_body_segments(client, roots, aid, atype_id, names, work_dir)
+                segments = _load_r15_body_segments(
+                    client, roots, aid, atype_id, names, work_dir
                 )
+                body_parts.update(segments)
+                # Korblox-Bein: Unterbein und Fuss sind Teil des
+                # "legless"-Looks und entfallen ersatzlos. Nur wenn der
+                # Stumpf wirklich geladen wurde - sonst bleibt das Bein des
+                # Avatars vollstaendig.
+                if any(name in segments for name in LEG_UPPER_SEGMENT_NAMES):
+                    removed = korblox_hidden_segments(aid)
+                    if removed:
+                        hidden_body_parts.update(removed)
+                        print(
+                            f"[body_part] Asset {aid} entfernt ersatzlos: "
+                            f"{', '.join(sorted(removed))}."
+                        )
             except Exception as exc:
                 print(f"[body_part] Asset {aid} konnte nicht geladen werden: {exc}")
 
@@ -1884,6 +1939,7 @@ def load_avatar_bundle(
         player_avatar_type=player_avatar_type,
         r15_part_textures=r15_part_textures,
         body_parts=body_parts,
+        hidden_body_parts=hidden_body_parts,
         r15_clothing_overlays=r15_clothing_overlays,
         idle_animation_asset_id=idle_animation_asset_id,
     )

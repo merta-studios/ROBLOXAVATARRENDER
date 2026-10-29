@@ -30,6 +30,7 @@ from PIL import Image
 from scripts.roblox_opencloud import (
     AvatarBundle,
     DEFAULT_IDLE_ANIMATION_ASSET_ID,
+    KORBLOX_HIDDEN_SEGMENT_NAMES,
     KORBLOX_RIGHT_LEG_ASSET_ID,
     PipelineError,
     _sanitize_secret,
@@ -207,16 +208,18 @@ def render_classic(
     )
 
     if bool(config["korblox"]):
-        # Das Korblox Deathspeaker Right Leg ersetzt das komplette rechte Bein
-        # (Oberbein, Unterbein und Fuss). Alle gelieferten Segmente kommen aus
-        # dem Asset - sonst stehen Unterbein und Fuss als Blocky-Fallback im
-        # Bild, obwohl der Avatar Korblox traegt.
+        # Das Korblox Deathspeaker Right Leg ersetzt das rechte Oberbein durch
+        # seinen Stumpf. Unterbein und Fuss entfallen ersatzlos ("legless") -
+        # sonst stehen dort Blocky-Teile, obwohl der Avatar Korblox traegt.
         korblox_parts = client.load_korblox_leg_segments(work_dir)
         if korblox_parts:
             bundle.body_parts.update(korblox_parts)
+            bundle.hidden_body_parts.update(KORBLOX_HIDDEN_SEGMENT_NAMES)
             print(
-                f"[korblox] Rechtes Bein ersetzt durch Korblox Deathspeaker Right Leg "
-                f"(Asset {KORBLOX_RIGHT_LEG_ASSET_ID}): {', '.join(sorted(korblox_parts))}."
+                f"[korblox] Rechtes Korblox-Bein ersetzt "
+                f"{', '.join(sorted(korblox_parts))}; ersatzlos entfernt: "
+                f"{', '.join(sorted(KORBLOX_HIDDEN_SEGMENT_NAMES))} "
+                f"(Asset {KORBLOX_RIGHT_LEG_ASSET_ID})."
             )
         else:
             print("[korblox] Korblox-Bein lieferte keine Segmente - Original bleibt erhalten.")
@@ -394,6 +397,11 @@ def main() -> int:
                     "display_name": bundle.display_name,
                     "user_id": bundle.user_id,
                     "accessories_count": len(bundle.accessories),
+                    # Segmente, die ein Asset ersatzlos entfernt hat
+                    # (Korblox: Unterbein und Fuss).
+                    "hidden_body_parts": sorted(
+                        getattr(bundle, "hidden_body_parts", set()) or ()
+                    ),
                     "scales": getattr(bundle, "scales", {}),
                     "player_avatar_type": getattr(bundle, "player_avatar_type", None),
                     "output_png": str(output_path),

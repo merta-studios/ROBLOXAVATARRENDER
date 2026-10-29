@@ -59,7 +59,6 @@ from scripts.rbx_animation import (
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
 from scripts.roblox_opencloud import AvatarBundle
-from scripts.blender_render import _build_blender_mesh_from_rbx
 
 # Vertikale Welt-Spanne der Ortho-Kamera. Die Abstaende sind Prozent der
 # Avatar-Hoehe und werden relativ zu diesem Wert berechnet.
@@ -562,6 +561,11 @@ def _create_inventory_part(
     classic_texture_path: str | None = None,
     scale: "BodyScale | None" = None,
 ) -> Any:
+    # Der Mesh-Builder lebt im R6-Renderer (er braucht bpy). Der Import
+    # erfolgt hier lokal, damit dieses Modul - wie der Rest der Datei - ohne
+    # Blender-Systembibliotheken importierbar bleibt.
+    from scripts.blender_render import _build_blender_mesh_from_rbx
+
     # Der Mesh-Builder konvertiert bereits Roblox -> Blender. Eine zweite
     # Achsentransformation wuerde die Teile auf den Boden kippen.
     mesh = _build_blender_mesh_from_rbx(
@@ -866,6 +870,27 @@ def _fmt_rot(mat: Any) -> str:
     return " | ".join(rows)
 
 
+def _skipped_body_parts(
+    official_parts: dict[str, Any],
+    hidden_parts: set[str] | frozenset[str] | None,
+    is_headless: bool,
+) -> set[str]:
+    """Segmente, die gar nicht gerendert werden.
+
+    Zwei Gruende gibt es:
+
+    * ``headless`` - der Kopf des Avatars ist ausgeblendet.
+    * ``hidden_parts`` - ein Asset entfernt das Segment ersatzlos. Beim
+      Korblox-Bein sind das Unterbein und Fuss: Unter dem Korblox-Stumpf ist
+      im Roblox-Client schlicht nichts. Diese Segmente duerfen deshalb auch
+      nicht auf den Blocky-Rig zurueckfallen.
+    """
+    skip = set(hidden_parts or ())
+    if is_headless:
+        skip.add("Head")
+    return {name for name in official_parts if name in skip}
+
+
 def _rig_pivot_overrides(
     body_parts: dict[str, Any] | None,
 ) -> dict[str, tuple[float, float, float]]:
@@ -1062,28 +1087,24 @@ def render_classic_scene(
     official_parts = load_r15_blocky_rig()
     part_textures = getattr(bundle, "r15_part_textures", {}) or {}
     body_parts = getattr(bundle, "body_parts", {}) or {}
+    # Segmente, die ein Asset ersatzlos entfernt (Korblox: Unterbein und
+    # Fuss). Sie bekommen bewusst KEINEN Blocky-Fallback - unter dem
+    # Korblox-Stumpf ist im Roblox-Client schlicht nichts.
+    hidden_parts = set(getattr(bundle, "hidden_body_parts", None) or ())
     # "headless" erzwingt den Headless-Look (wie beim GFX-Typ HearthandsType).
     is_headless = getattr(bundle.head, "kind", "") == "headless" or bool(headless)
-    # "korblox" ersetzt das komplette rechte Bein (Oberbein, Unterbein, Fuss);
-    # die Segmente schreibt bereits die Pipeline in die Body-Parts des
-    # Avatars. Fehlt eines davon, greift dort der Blocky-Fallback - das wird
-    # hier sichtbar gemeldet.
-    if korblox:
-        missing = [
-            name
-            for name in ("RightUpperLeg", "RightLowerLeg", "RightFoot")
-            if name not in body_parts
-        ]
-        if len(missing) == 3:
-            print(
-                "[korblox] Kein Korblox-Bein geladen - das Bein des Avatars "
-                "bleibt vollstaendig erhalten."
-            )
-        elif missing:
-            print(
-                f"[korblox] Korblox-Segmente nicht geladen: {', '.join(missing)} - "
-                "dort bleibt der Blocky-Rig des Avatars."
-            )
+    # "korblox" ersetzt das rechte Oberbein durch den Korblox-Stumpf; die
+    # Segmente schreibt bereits die Pipeline in die Body-Parts des Avatars.
+    if korblox and "RightUpperLeg" not in body_parts:
+        print(
+            "[korblox] Kein Korblox-Oberbein geladen - das Bein des Avatars "
+            "bleibt vollstaendig erhalten."
+        )
+    if hidden_parts:
+        print(
+            f"[classic] Ersatzlos entfernte Segmente (kein Blocky-Fallback): "
+            f"{', '.join(sorted(hidden_parts))}."
+        )
     # Groessen-Werte des Avatars (Breite/Hoehe/Tiefe/Kopf).
     body_scale = BodyScale.from_bundle(bundle)
     if not body_scale.is_identity:
@@ -1093,8 +1114,11 @@ def render_classic_scene(
             f"Tiefe={body_scale.depth:.2f} Kopf={body_scale.head:.2f}"
         )
 
+    skipped_parts = _skipped_body_parts(official_parts, hidden_parts, is_headless)
     for name, part in official_parts.items():
-        if name == "Head" and is_headless:
+        if name in skipped_parts:
+            # Headless-Kopf bzw. Korblox-Luecke: Das Segment ist nicht Teil
+            # des Avatars. Weder Asset noch Blocky-Rig - es bleibt leer.
             continue
         rgb = bundle.body_colors.get(part.color_key, DEFAULT_BODY_RGB[part.color_key])
         srgb = tuple(max(0.0, min(1.0, float(c) / 255.0)) for c in rgb)
