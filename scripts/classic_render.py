@@ -986,7 +986,7 @@ def render_classic_scene(
     classic_abstand_unten: float = 0.0,
     korblox: bool = False,
     headless: bool = False,
-) -> None:
+) -> dict[str, Any]:
     """Rendert ClassicType in einer eigenen Szene -- ohne R6-Blend-Datei.
 
     Der Koerper kommt aus dem offiziellen Standard-R15-Blocky-Rig
@@ -1011,6 +1011,13 @@ def render_classic_scene(
     body_parts = getattr(bundle, "body_parts", {}) or {}
     # "headless" erzwingt den Headless-Look (wie beim GFX-Typ HearthandsType).
     is_headless = getattr(bundle.head, "kind", "") == "headless" or bool(headless)
+    # "korblox" ersetzt das rechte Oberbein; das Asset selbst wird schon beim
+    # Laden in die Body-Parts des Avatars geschrieben (Pipeline).
+    if korblox and "RightUpperLeg" not in body_parts:
+        print(
+            "[korblox] Kein Korblox-Oberbein geladen - das Bein des Avatars "
+            "bleibt vollstaendig erhalten."
+        )
     # Groessen-Werte des Avatars (Breite/Hoehe/Tiefe/Kopf).
     body_scale = BodyScale.from_bundle(bundle)
     if not body_scale.is_identity:
@@ -1220,3 +1227,19 @@ def render_classic_scene(
 
     if not output_png.is_file() or output_png.stat().st_size == 0:
         raise RuntimeError(f"ClassicType hat keine Ausgabedatei unter '{output_png}' erzeugt.")
+
+    # TEMPORAERE DIAGNOSE (wird wieder entfernt)
+    return {
+        "korblox": bool(korblox),
+        "headless": bool(headless),
+        "is_headless": bool(is_headless),
+        "head_kind": str(getattr(bundle.head, "kind", "")),
+        "body_objects": sorted(body_objects.keys()),
+        "body_parts": sorted(body_parts.keys()),
+        "accessories": [
+            [str(getattr(acc, "name", "")), int(getattr(acc, "asset_type_id", 0) or 0)]
+            for acc in bundle.accessories
+        ],
+        "scales": dict(getattr(bundle, "scales", {}) or {}),
+        "render_objects": len(render_objects),
+    }
