@@ -69,7 +69,7 @@ rotation_deg = 0
 # 100 = oben bzw. unten noch eine komplette Avatar-Höhe Platz, bevor der Avatar
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
-abstand_oben = 4
+abstand_oben = 5
 abstand_unten = 5
 
 # Render-Hinweis: Dieser GFX-Typ wird mit einer eigenen leeren Szene
