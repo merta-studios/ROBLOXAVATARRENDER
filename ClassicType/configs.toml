@@ -50,12 +50,12 @@ animation_asset_id = 658830056
 # Oberbein im Render durch das Korblox-Bein ersetzt (mit dessen eigenen
 # Materialien/Texturen) - wie beim GFX-Typ HearthandsType, wo das Korblox-Bein
 # ebenfalls nur ein Stück ist. Unterbein und Fuß bleiben beim Avatar.
-korblox = true
+korblox = false
 
 # Headless Horseman-Look: Wenn true, wird der Kopf unsichtbar gemacht und
 # auch die Gesicht-Accessoires (z. B. Brillen oder Masken) ausgeblendet.
 # Haare, Hüte und Hals-Accessoires bleiben sichtbar.
-headless = true
+headless = false
 
 # Drehung des Avatars in Grad um die vertikale Achse:
 # 0 = schaut zur Mitte, 45 = schräg nach rechts, -45 = schräg nach links.

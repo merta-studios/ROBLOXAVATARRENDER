@@ -986,7 +986,7 @@ def render_classic_scene(
     classic_abstand_unten: float = 0.0,
     korblox: bool = False,
     headless: bool = False,
-) -> dict[str, Any]:
+) -> None:
     """Rendert ClassicType in einer eigenen Szene -- ohne R6-Blend-Datei.
 
     Der Koerper kommt aus dem offiziellen Standard-R15-Blocky-Rig
@@ -1228,18 +1228,3 @@ def render_classic_scene(
     if not output_png.is_file() or output_png.stat().st_size == 0:
         raise RuntimeError(f"ClassicType hat keine Ausgabedatei unter '{output_png}' erzeugt.")
 
-    # TEMPORAERE DIAGNOSE (wird wieder entfernt)
-    return {
-        "korblox": bool(korblox),
-        "headless": bool(headless),
-        "is_headless": bool(is_headless),
-        "head_kind": str(getattr(bundle.head, "kind", "")),
-        "body_objects": sorted(body_objects.keys()),
-        "body_parts": sorted(body_parts.keys()),
-        "accessories": [
-            [str(getattr(acc, "name", "")), int(getattr(acc, "asset_type_id", 0) or 0)]
-            for acc in bundle.accessories
-        ],
-        "scales": dict(getattr(bundle, "scales", {}) or {}),
-        "render_objects": len(render_objects),
-    }
