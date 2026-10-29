@@ -43,6 +43,29 @@ from scripts.render_config import (
 )
 
 
+_DIAG: dict[str, Any] = {}
+
+
+def _diag_png_chunk(png_path: Path, key: str, payload: dict[str, Any]) -> None:
+    """TEMPORARY: schreibt Diagnose-Daten als tEXt-Chunk in das PNG."""
+    import struct
+    import zlib
+
+    raw = png_path.read_bytes()
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    chunk = (
+        struct.pack(">I", len(key))
+        + key.encode("ascii")
+        + b"\x00"
+        + body
+        + struct.pack(">I", zlib.crc32(key.encode("ascii") + b"\x00" + body) & 0xFFFFFFFF)
+    )
+    offset = 8
+    length = struct.unpack(">I", raw[offset : offset + 4])[0]
+    offset += 4 + length + 4
+    png_path.write_bytes(raw[:offset] + chunk + raw[offset:])
+
+
 def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> None:
     if not png_path.is_file() or png_path.stat().st_size == 0:
         raise PipelineError("Das gerenderte PNG fehlt oder ist 0 Bytes groß.")
@@ -124,6 +147,7 @@ def resolve_classic_pose(
 
     if pose == "Equipped":
         equipped = client.fetch_equipped_emote(bundle.user_id)
+        _DIAG["equipped"] = equipped
         if equipped and equipped.get("emote_asset_id"):
             emote_asset_id = int(equipped["emote_asset_id"])
             print(f"[pose] Ausgeruestete Profilpose (Emote {emote_asset_id}) wurde verwendet.")
@@ -158,6 +182,24 @@ def resolve_classic_pose(
     elif pose == "Emote":
         print("[pose] Keine gueltige emote_asset_id - Pose bleibt 'None'.")
         pose = "None"
+
+    # TEMPORARY DIAG
+    if classic_emote is not None:
+        clip = classic_emote.clip
+        t = float(clip.preview_time())
+        rots = clip.local_rotations(t)
+        _DIAG["pose"] = pose
+        _DIAG["emote_asset_id"] = emote_asset_id
+        _DIAG["format"] = clip.source_format
+        _DIAG["preview_time"] = t
+        _DIAG["n_times"] = len(clip.times)
+        _DIAG["bones"] = {
+            name: {
+                "parent": track.parent,
+                "rot": [round(float(v), 5) for v in rots[name].flatten()],
+            }
+            for name, track in clip.tracks.items()
+        }
 
     return pose, classic_emote, emote_asset_id
 
@@ -294,6 +336,13 @@ def main() -> int:
                 )
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
+
+        # TEMPORARY DIAG
+        if _DIAG:
+            try:
+                _diag_png_chunk(output_path, "rbxdiag", _DIAG)
+            except Exception as exc:  # pragma: no cover - Diagnose
+                print(f"[diag] konnte nicht geschrieben werden: {exc}")
 
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(
