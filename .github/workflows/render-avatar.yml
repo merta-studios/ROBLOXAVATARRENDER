@@ -57,6 +57,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_USERNAME: ${{ inputs.username }}
           GFX_TYPE: ${{ inputs.gfx-type }}
+          # Diagnose: historische Classic-Kleidungs-Assets direkt laden und
+          # ihre Templates im Diagnose-Tag veroeffentlichen.
+          PROBE_CLOTHING_ASSETS: "10349332990,84753441338053,115182347741"
         run: |
           set -uo pipefail
 

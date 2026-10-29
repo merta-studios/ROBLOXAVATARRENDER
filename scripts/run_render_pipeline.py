@@ -324,11 +324,33 @@ def main() -> int:
             try:
                 for pattern in (
                     "bodypart_*.png", "mesh_*.mesh", "r15_*.png", "classic_clothing_*.png",
+                    "r6_body_texture*.png",
                 ):
                     for item in sorted(work_dir.glob(pattern)):
-                        shutil.copy2(item, output_path.parent / item.name)
+                        # GFX-Typ im Dateinamen: beide Typen rendern in dasselbe
+                        # Ausgabeverzeichnis und ueberschreiben sich sonst.
+                        shutil.copy2(
+                            item, output_path.parent / f"{gfx_type}_{item.name}"
+                        )
             except OSError:
                 pass
+
+            # Diagnose: beliebige Classic-Kleidungs-Assets (Shirt/Pants) direkt
+            # laden und das Template veroeffentlichen. Damit laesst sich pruefen,
+            # wie Roblox ein historisches Outfit auf dem R15-Klassikpfad zeigt.
+            probe_ids = [
+                int(part)
+                for part in os.environ.get("PROBE_CLOTHING_ASSETS", "").replace(";", ",").split(",")
+                if part.strip().isdigit()
+            ]
+            for probe_id in probe_ids:
+                try:
+                    probe_img = client.fetch_image(probe_id)
+                    probe_path = output_path.parent / f"{gfx_type}_probe_clothing_{probe_id}.png"
+                    probe_img.save(probe_path, format="PNG")
+                    print(f"[probe] Kleidungs-Asset {probe_id}: {probe_img.size} -> {probe_path.name}")
+                except Exception as exc:  # pragma: no cover - Diagnose-Hilfe
+                    print(f"[probe] Kleidungs-Asset {probe_id} nicht ladbar: {exc}")
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
 
