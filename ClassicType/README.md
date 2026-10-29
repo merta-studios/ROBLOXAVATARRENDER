@@ -102,3 +102,78 @@ ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
   Multiplikator auf die ColorMap und wird linear auf die Texturfarbe
   angewendet.
 
+
+## Emote & Pose
+
+`pose = "Emote"` (Emote über `emote_asset_id`) und `pose = "Equipped"` (die am
+Spieleravatar ausgerüstete Pose) setzen den Avatar in die Pose der
+geladenen Animation. `scripts/rbx_animation.py` liest die Animation,
+`scripts/classic_render.py` rechnet sie auf das R15-Rig der Classic-Szene um.
+
+### Die beiden Animationsformate von Roblox
+
+**`KeyframeSequence`** (klassisch, z. B. „Emote_Hello“): Jeder `Keyframe`
+enthält einen verschachtelten `Pose`-Baum (`HumanoidRootPart` → `LowerTorso`
+→ `UpperTorso` → `Head`/`LeftUpperArm` → …). Die `CFrame` einer Pose ist die
+Transformation des Gelenks **relativ zum Elterngelenk** (lokal) – dieselbe
+Konvention, die Roblox' eigener CurveAnimation→KeyframeSequence-Konverter
+verwendet.
+
+**`CurveAnimation`** (neu, UGC-Emotes wie „Imported Animation Clip“): Je Bone
+ein `Folder` mit einer `Vector3Curve "Position"` und einer
+`EulerRotationCurve "Rotation"` (mit `FloatCurve`-Kindern je Achse). Der
+Wert steckt als Binärblob in `ValuesAndTimes`:
+
+| Offset | Inhalt |
+| --- | --- |
+| `u32` | Version (2) |
+| `u32` | Anzahl der Keys |
+| je Key (14 Byte) | `u8` Interpolationsart (0 konstant, 1 linear, 2 cubic), `u8` reserviert, `f32` Wert, `f32` linke Tangente, `f32` rechte Tangente (Wert pro Sekunde) |
+| `u32` | Zeitformat (1) |
+| `u32` | Anzahl der Zeitpunkte |
+| je Zeitpunkt (4 Byte) | `u32` Tick – **2400 Ticks = 1 Sekunde** |
+
+Verifiziert an zwei echten Assets: Die Keyframes der „Emote_Hello“-Animation
+liegen 0,042 s (= 1/24 s) auseinander, die der CurveAnimation in Vielfachen
+von 80 Ticks (= 1/30 s bei 2400 Ticks/s); mit 14400 Ticks/s ergäbe sich eine
+unplausible Gesamtdauer von 0,82 s für den 4,9-Sekunden-Tanz.
+
+Die Euler-Winkel werden in der Reihenfolge `Enum.RotationOrder` multipliziert,
+für den von Roblox gelieferten Standard `XYZ` (Order 0) also `Rx @ Ry @ Rz`
+– bestätigt an zwei unabhängigen Readern des Formats, die dieselbe Matrix
+liefern.
+
+### Anwenden der Pose
+
+Roblox bewegt die Segmente über Motor6D-Joints: Jedes Segment hängt an genau
+einem Gelenk und dreht sich genau darum. Der Renderer rechnet dieselbe Kette
+nach:
+
+* Drehpunkt jedes Segments = die zugehörige Position der offiziellen
+  `R15FixedRigAttachmentMap` (`Root`/`Waist`/`Neck`/`Shoulder`/`Elbow`/`Wrist`/
+  `Hip`/`Knee`/`Ankle`), also genau die Punkte, an denen Roblox ein
+  Körperteil-Asset einhängt.
+* Die Rotationen werden von der Wurzel aus über die Bone-Hierarchie
+  zusammengesetzt; Kind-Segmente wandern mit der Rotation des Elternsegments
+  mit (Vorwärtsrechnung über die Gelenkpositionen).
+* Accessoires hängen an dem Segment, an dem ihr Attachment im Standard-Rig
+  sitzt, und folgen damit der Pose.
+
+R6-Begriffe alter Emotes (`Left Arm`, `Torso`, …) werden auf die
+R15-Segmente umgebildet und dabei um dieselben Gelenke gedreht.
+
+### Vorschau-Moment
+
+Der eingefrorene Moment ist die **erste Keyframe** der Animation. Roblox
+erzeugt das Vorsau-Bild einer UGC-Emote ebenfalls aus der ersten Keyframe
+(Roblox-Forum: „UGC emotes use the first keyframe for the thumbnail“); das
+System rät den Moment also nicht.
+
+### Ausgerüstete Pose (`pose = "Equipped"`)
+
+Die öffentliche Avatar-API (`avatar.roblox.com/v2/avatar/users/{id}/avatar`)
+liefert im Feld `emotes` die ausgerüsteten Emotes mit ihrer Slot-Nummer.
+Slot 1 ist die Emote, die Roblox auch als Profilpose verwendet. Der ältere
+Endpunkt `/v1/avatar/thumbnail-customizations` liefert die Profilpose
+direkt, verlangt aber ein `.ROBLOSECURITY`-Cookie des eigenen Accounts und
+antwortet deshalb immer mit HTTP 401 – er ist ohne Login nicht nutzbar.

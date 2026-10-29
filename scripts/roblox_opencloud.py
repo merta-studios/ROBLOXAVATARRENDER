@@ -23,6 +23,11 @@ from scripts.r15_clothing import (
     compose_r15_part_textures,
     crop_template_rect as _crop_template,
 )
+from scripts.rbx_animation import (
+    describe_clip,
+    parse_animation_asset,
+    rotation_angle_deg,
+)
 from scripts.rbx_formats import (
     IDENTITY_CFRAME,
     MeshData,
@@ -138,35 +143,32 @@ class AvatarBundle:
 
 
 @dataclass
-class EmoteKeyframe:
-    time: float
-    poses: dict[str, tuple[float, ...]]
-
-
-@dataclass
 class EmoteAnimation:
+    """Eine geladene Emote-Animation (KeyframeSequence oder CurveAnimation)."""
+
     asset_id: int
-    keyframes: list[EmoteKeyframe]
+    clip: Any
 
     @property
-    def preview_keyframe(self) -> EmoteKeyframe | None:
-        """Der Moment der Emote-Vorschau: die erste Keyframe (Zeit 0.0) der
-        Animation, andernfalls die frueheste vorhandene Keyframe."""
-        if not self.keyframes:
-            return None
-        return self.keyframes[0]
+    def preview_time(self) -> float:
+        """Der Moment der Emote-Vorschau: die erste Keyframe der Animation.
+
+        Roblox erzeugt das Vorsau-Bild einer UGC-Emote aus der ersten
+        Keyframe (Roblox-Forum: "UGC emotes use the first keyframe for the
+        thumbnail"), also wird nichts geraten.
+        """
+        if self.clip is None:
+            return 0.0
+        return float(self.clip.preview_time())
 
 
-def _max_rotation_deviation(poses: dict[str, tuple[float, ...]]) -> float:
-    """Groesste Rotationsabweichung einer Pose von der Identitaet (Grad)."""
-    best = 0.0
-    for cf in poses.values():
-        if not cf or len(cf) != 12:
-            continue
-        rot = np.asarray(cf[3:12], dtype=np.float64).reshape(3, 3)
-        cos = float(np.clip((np.trace(rot) - 1.0) / 2.0, -1.0, 1.0))
-        best = max(best, float(np.degrees(np.arccos(cos))))
-    return best
+def _all_nodes(roots: list[RbxNode]) -> list[RbxNode]:
+    """Alle Knoten eines geparsten Modells (inklusive der Wurzeln)."""
+    nodes: list[RbxNode] = []
+    for root in roots:
+        nodes.append(root)
+        nodes.extend(root.descendants())
+    return nodes
 
 
 def _sanitize_secret(text: str, secret: str) -> str:
@@ -387,12 +389,22 @@ class RobloxOpenCloudClient:
         }
 
     def load_emote_animation(self, asset_id: int, work_dir: Path) -> EmoteAnimation | None:
-        """Laedt eine Emote-Animation (Asset-Typ Animation/PoseAnimation) per
-        Open Cloud Asset Delivery und parst die Keyframes aus.
+        """Laedt eine Emote-Animation (Asset-Typ Animation/EmoteAnimation) per
+        Open Cloud Asset Delivery und parst sie aus.
 
-        Das System rat den Vorschau-Moment nicht aus: die Animation kommt
-        komplett aus der API, der verwendete Moment ist die erste Keyframe
-        (Zeit 0.0), also genau der Anfang der Emote-Vorschau.
+        Roblox liefert Emotes in zwei Formaten, beide werden unterstuetzt:
+
+        * ``KeyframeSequence`` (klassisch): verschachtelter ``Pose``-Baum je
+          Keyframe.
+        * ``CurveAnimation`` (neu, UGC-Emotes): Ordner je Bone mit
+          FloatCurve-Bloeb (``ValuesAndTimes``).
+
+        Manche Emote-Assets sind nur ein ``Animation``-Wrapper; dann zeigt
+        dessen ``AnimationId`` auf das eigentliche Animations-Asset.
+
+        Das System rat den Vorschau-Moment nicht aus: der verwendete Moment
+        ist die erste Keyframe der Animation, also genau der Anfang der
+        Emote-Vorschau (so erzeugt Roblox auch das Vorsau-Bild).
         """
         info: dict[str, Any] = {"asset_id": asset_id}
         EMOTE_DIAGNOSTICS["emote"] = info
@@ -404,10 +416,6 @@ class RobloxOpenCloudClient:
             return None
 
         info["bytes"] = len(raw)
-        info["head_hex"] = raw[:32].hex()
-        info["is_rbxm"] = raw[:14] == RBXM_MAGIC
-        if len(raw) <= 40000:
-            info["raw_b64"] = base64.b64encode(raw).decode("ascii")
         try:
             roots = parse_rbx_model(raw)
         except Exception as exc:
@@ -415,131 +423,49 @@ class RobloxOpenCloudClient:
             print(f"[emote] Emote {asset_id} konnte nicht geparst werden: {exc}")
             return None
 
-        info["root_count"] = len(roots)
-        info["tree"] = [
-            {
-                "class": rt.class_name,
-                "name": rt.name,
-                "props": {k: repr(v)[:300] for k, v in rt.props.items()},
-                "child_count": len(rt.children),
-                "children": [
-                    {
-                        "class": ch.class_name,
-                        "name": ch.name,
-                        "props": {k: repr(v)[:300] for k, v in ch.props.items()},
-                        "child_count": len(ch.children),
-                        "grandchildren": [
-                            {
-                                "class": gc.class_name,
-                                "name": gc.name,
-                                "props": {k: repr(v)[:200] for k, v in gc.props.items()},
-                            }
-                            for gc in ch.children[:6]
-                        ],
-                    }
-                    for ch in rt.children[:8]
-                ],
-            }
-            for rt in roots[:4]
-        ]
-
-        nodes: list[RbxNode] = []
-        for rt in roots:
-            nodes.append(rt)
-            nodes.extend(rt.descendants())
-
-        sequences = [n for n in nodes if n.class_name == "KeyframeSequence"]
-        info["keyframe_sequence_count"] = len(sequences)
-        info["all_classes"] = sorted({n.class_name for n in nodes})
-
-        if not sequences:
+        clip = parse_animation_asset(roots)
+        if clip is None:
             # Neuere Emote-Assets sind nur ein "Animation"-Wrapper: die
-            # eigentliche KeyframeSequence liegt in einem zweiten Asset, auf
-            # das die Property "AnimationId" zeigt.
-            for node in nodes:
+            # eigentliche Animation liegt in einem zweiten Asset, auf das die
+            # Property "AnimationId" zeigt.
+            for node in _all_nodes(roots):
                 if node.class_name != "Animation":
                     continue
-                anim_id = node.prop("AnimationId")
-                info.setdefault("animation_ids", []).append(repr(anim_id)[:300])
-                target = extract_asset_id(anim_id)
+                target = extract_asset_id(node.prop("AnimationId"))
                 info["animation_target"] = target
                 if not target or target == asset_id:
                     continue
                 try:
                     raw2 = self.fetch_asset_bytes(target)
                     info["animation_target_bytes"] = len(raw2)
-                    if len(raw2) <= 200000:
-                        info["animation_target_raw_b64"] = base64.b64encode(raw2).decode("ascii")
                     roots2 = parse_rbx_model(raw2)
                 except Exception as exc:
                     info["animation_target_error"] = f"{type(exc).__name__}: {exc}"[:400]
                     continue
-                nodes2: list[RbxNode] = []
-                for rt in roots2:
-                    nodes2.append(rt)
-                    nodes2.extend(rt.descendants())
-                info["animation_target_classes"] = sorted({n.class_name for n in nodes2})
-                info["animation_target_tree"] = [
-                    {
-                        "class": rt.class_name,
-                        "name": rt.name,
-                        "props": {k: repr(v)[:300] for k, v in rt.props.items()},
-                        "child_count": len(rt.children),
-                    }
-                    for rt in roots2[:3]
-                ]
-                info["animation_target_nodes"] = [
-                    {
-                        "class": n.class_name,
-                        "name": n.name,
-                        "props": {k: repr(v)[:250] for k, v in n.props.items()},
-                        "children": [c.class_name for c in n.children][:10],
-                    }
-                    for n in nodes2[:400]
-                ]
-                sequences = [n for n in nodes2 if n.class_name == "KeyframeSequence"]
-                if sequences:
-                    nodes = nodes2
+                clip = parse_animation_asset(roots2)
+                if clip is not None:
                     break
 
-        if not sequences:
-            print(f"[emote] Emote {asset_id} enthaelt keine KeyframeSequence.")
+        if clip is None:
+            info["classes"] = sorted({n.class_name for n in _all_nodes(roots)})
+            print(
+                f"[emote] Emote {asset_id} enthaelt weder eine KeyframeSequence "
+                "noch eine CurveAnimation."
+            )
             return None
 
-        keyframes: list[EmoteKeyframe] = []
-        for kf_node in sequences[0].children:
-            if kf_node.class_name != "Keyframe":
-                continue
-            time = float(kf_node.prop("Time", default=0.0) or 0.0)
-            poses: dict[str, tuple[float, ...]] = {}
-            for pose_node in kf_node.children:
-                if pose_node.class_name != "Pose":
-                    continue
-                cf = pose_node.prop("CFrame")
-                if cf:
-                    poses[pose_node.name] = tuple(float(x) for x in cf)
-            keyframes.append(EmoteKeyframe(time=time, poses=poses))
+        info.update(describe_clip(clip))
+        info["preview_rotations"] = {
+            name: round(rotation_angle_deg(matrix), 2)
+            for name, matrix in sorted(clip.local_rotations(clip.preview_time()).items())
+        }
+        print(
+            f"[emote] Emote {asset_id}: {clip.source_format} geladen, "
+            f"{len(clip.tracks)} Bones, {len(clip.times)} Zeitpunkte, "
+            f"Vorschau-Moment t={clip.preview_time():.3f}s."
+        )
+        return EmoteAnimation(asset_id=asset_id, clip=clip)
 
-        keyframes.sort(key=lambda kf: kf.time)
-        info["keyframe_count"] = len(keyframes)
-        info["pose_names"] = sorted({name for kf in keyframes for name in kf.poses})
-        info["frames"] = [
-            {"time": round(kf.time, 3), "max_dev": round(_max_rotation_deviation(kf.poses), 1)}
-            for kf in keyframes
-        ]
-        info["keyframes"] = [
-            {
-                "time": round(kf.time, 3),
-                "poses": {name: [round(float(v), 4) for v in cf] for name, cf in kf.poses.items()},
-            }
-            for kf in keyframes[:6]
-        ]
-        if not keyframes:
-            print(f"[emote] Emote {asset_id} enthaelt keine Keyframes.")
-            return None
-
-        print(f"[emote] Emote {asset_id}: {len(keyframes)} Keyframes geladen, Vorschau-Moment t={keyframes[0].time}.")
-        return EmoteAnimation(asset_id=asset_id, keyframes=keyframes)
 
     def load_korblox_leg(self, work_dir: Path) -> dict[str, Any]:
         """Laedt das Korblox Deathspeaker Right Leg (Asset-ID 139607718) per

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import struct
@@ -157,6 +158,11 @@ class RbxNode:
     class_name: str
     name: str = ""
     props: dict[str, Any] = field(default_factory=dict)
+    # Rohdaten fuer String-/BinaryString-Properties. Roblox nutzt denselben
+    # Property-Typ (0x01) fuer Text und Binaerblobs (z. B. die
+    # "ValuesAndTimes"-Daten einer FloatCurve). Der Text wird weiterhin
+    # UTF-8-entschaerft gespeichert, die unveraenderten Bytes liegen hier.
+    raw_props: dict[str, bytes] = field(default_factory=dict)
     children: list["RbxNode"] = field(default_factory=list)
     parent: "RbxNode | None" = field(default=None, repr=False)
 
@@ -358,9 +364,11 @@ def _parse_rbxm_binary(data: bytes) -> list[RbxNode]:
         _cls_name, refs = classes[cid]
         n = len(refs)
         vals: list[Any] | None = None
+        raws: list[bytes] | None = None
         try:
             if ptype == 0x01:  # String / BinaryString / ContentId
-                vals = [r.string() for _ in range(n)]
+                raws = [r.bytes_() for _ in range(n)]
+                vals = [b.decode("utf-8", errors="replace") for b in raws]
             elif ptype == 0x02:  # Bool
                 vals = [r.u8() != 0 for _ in range(n)]
             elif ptype == 0x03:  # Int32
@@ -396,12 +404,11 @@ def _parse_rbxm_binary(data: bytes) -> list[RbxNode]:
                 ]
             elif ptype == 0x1C:  # SharedString
                 idxs = r.interleaved_u32(n).tolist()
-                vals = [
-                    shared_strings[idx].decode("utf-8", errors="replace")
-                    if 0 <= idx < len(shared_strings)
-                    else ""
+                raws = [
+                    shared_strings[idx] if 0 <= idx < len(shared_strings) else b""
                     for idx in idxs
                 ]
+                vals = [b.decode("utf-8", errors="replace") for b in raws]
             elif ptype == 0x1E:  # OptionalCFrame
                 if r.u8() == 0x10:
                     rots = _read_rotations(r, n)
@@ -429,9 +436,11 @@ def _parse_rbxm_binary(data: bytes) -> list[RbxNode]:
             continue
 
         if vals is not None and len(vals) == n:
-            for ref, val in zip(refs, vals):
+            for idx, (ref, val) in enumerate(zip(refs, vals)):
                 node = nodes_by_ref[ref]
                 node.props[prop_name] = val
+                if raws is not None:
+                    node.raw_props[prop_name] = raws[idx]
                 if prop_name == "Name" and isinstance(val, str):
                     node.name = val
 
@@ -559,6 +568,12 @@ def _parse_xml_item(item_el: ET.Element, parent: RbxNode | None = None) -> RbxNo
 
             if pname and val is not None:
                 node.props[pname] = val
+                if tag == "BinaryString":
+                    # Binaer-Properties stehen in .rbxmx als Base64.
+                    try:
+                        node.raw_props[pname] = base64.b64decode(text) if text else b""
+                    except Exception:
+                        node.raw_props[pname] = b""
                 if pname == "Name" and isinstance(val, str):
                     node.name = val
 
