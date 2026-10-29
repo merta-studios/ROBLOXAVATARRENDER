@@ -74,6 +74,10 @@ RIGID_ACCESSORY_TYPE_IDS = {
 # emote selected, the avatar is posed as the equipped idle animation's
 # thumbnail" (DevForum 2625157).
 IDLE_ANIMATION_TYPE_ID = 51
+# Asset-Typ 79 = "DynamicHead": der neue Roblox-Kopf (Mesh mit eingebautem
+# Gesicht). Er haengt - wie die uebrigen Koerperteile - an seinen eigenen
+# Rig-Attachments.
+DYNAMIC_HEAD_TYPE_ID = 79
 
 # Roblox' Standard-Idle "Rthro Idle" (Asset-Typ 51, von Roblox selbst).
 # Roblox legt sie fuer Profilbilder zu, wenn kein eigenes Idle ausgeruestet
@@ -94,6 +98,11 @@ class HeadSpec:
     skin_rgb: tuple[int, int, int] = (245, 205, 48)
     face_texture_path: str | None = None
     custom_texture_path: str | None = None
+    transparency: float = 0.0
+    # Asset-ID/-Typ und die Position des Kopf-Assets im Roblox-Rig-Space.
+    asset_id: int = 0
+    asset_type_id: int = 0
+    cframe: tuple[float, ...] = IDENTITY_CFRAME
 
 
 @dataclass
@@ -844,6 +853,49 @@ def _absolute_cframe(node: RbxNode) -> tuple[float, ...]:
     return cframe
 
 
+def _translation_cframe(position: tuple[float, float, float]) -> tuple[float, ...]:
+    """Baut ein reines Verschieben-CFrame (12 Werte) fuer eine Position."""
+    return (
+        float(position[0]), float(position[1]), float(position[2]),
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 1.0,
+    )
+
+
+def _head_rig_origin(nodes: list[RbxNode]) -> tuple[float, float, float] | None:
+    """Bestimmt die Position eines Kopf-Assets im Roblox-Rig-Space.
+
+    DynamicHeads (Asset-Typ 79) liefern ihre Rig-Attachments als
+    ``Vector3Value``-Knoten. Die Werte liegen im lokalen Space des Assets
+    (Ursprung = Mitte des Kopfes); die offiziellen Positionen der
+    ``R15FixedRigAttachmentMap`` liegen dagegen im Rig-Space. Die Differenz
+    beider ist damit genau die Position, an der der Kopf im Rig haengt.
+    """
+    deltas: list[tuple[float, float, float]] = []
+    for node in nodes:
+        if node.class_name != "Vector3Value":
+            continue
+        target = R15_FIXED_ATTACHMENT_POSITIONS.get(node.name)
+        value = node.prop("Value")
+        if target is None or not isinstance(value, (list, tuple)) or len(value) < 3:
+            continue
+        deltas.append(
+            (
+                float(target[0]) - float(value[0]),
+                float(target[1]) - float(value[1]),
+                float(target[2]) - float(value[2]),
+            )
+        )
+    if not deltas:
+        return None
+    origin: list[float] = []
+    for axis in range(3):
+        values = sorted(delta[axis] for delta in deltas)
+        origin.append(float(values[len(values) // 2]))
+    return (origin[0], origin[1], origin[2])
+
+
 def _part_rig_attachments(
     node: RbxNode, align_offset: tuple[float, float, float]
 ) -> dict[str, tuple[float, float, float]]:
@@ -1168,6 +1220,8 @@ def load_avatar_bundle(
     )
     if head_asset_item is not None:
         head_aid = int(head_asset_item["id"])
+        head_spec.asset_id = head_aid
+        head_spec.asset_type_id = int((head_asset_item.get("assetType") or {}).get("id") or 0)
         raw_head = client.fetch_asset_bytes(head_aid)
         try:
             roots = parse_rbx_model(raw_head)
@@ -1216,6 +1270,14 @@ def load_avatar_bundle(
                         head_spec.kind = "dynamic_head"
                         head_spec.mesh = mdata
                         head_spec.mesh_scale = mscale
+                        head_spec.transparency = trans
+                        origin = _head_rig_origin(nodes)
+                        if origin is not None:
+                            head_spec.cframe = _translation_cframe(origin)
+                            print(
+                                f"[head] Kopf sitzt im Rig bei "
+                                f"({origin[0]:.3f}, {origin[1]:.3f}, {origin[2]:.3f})."
+                            )
                         print(
                             f"[head] DynamicHead {head_aid}: Mesh geladen "
                             f"(Groesse={tuple(round(v, 3) for v in ext)}, "
@@ -1250,6 +1312,14 @@ def load_avatar_bundle(
                         head_spec.mesh = mdata
                         head_spec.mesh_scale = (float(sscale[0]), float(sscale[1]), float(sscale[2]))
                         head_spec.mesh_offset = (float(soff[0]), float(soff[1]), float(soff[2]))
+                        head_spec.transparency = float(sm.prop("Transparency", default=0.0) or 0.0)
+                        origin = _head_rig_origin(nodes)
+                        if origin is not None:
+                            head_spec.cframe = _translation_cframe(origin)
+                            print(
+                                f"[head] Kopf sitzt im Rig bei "
+                                f"({origin[0]:.3f}, {origin[1]:.3f}, {origin[2]:.3f})."
+                            )
                         tid = extract_asset_id(sm.prop("TextureId", "TextureID", "TextureContent"))
                         if tid:
                             himg = client.fetch_image(tid)
@@ -1274,6 +1344,29 @@ def load_avatar_bundle(
     # Fehler einzelner Segmente duerfen die uebrigen nicht unterdruecken.
     body_parts: dict[str, BodyPartSpec] = {}
     if gfx_type == "ClassicType":
+        # Der DynamicHead (Asset-Typ 79) ist der echte Roblox-Kopf des
+        # Avatars: ein eigenes Mesh mit eingebautem Gesicht, das an seinen
+        # eigenen Rig-Attachments haengt. Er wird wie ein Koerperteil-Asset
+        # behandelt und ersetzt den Blocky-Kopf. Der klassische Kopf (Typ 17)
+        # bleibt beim Blocky-Rig - dort liefert Roblox die Optik ueber die
+        # klassische Gesichtstextur.
+        if (
+            head_spec.mesh is not None
+            and head_spec.asset_type_id == DYNAMIC_HEAD_TYPE_ID
+            and head_spec.kind != "headless"
+        ):
+            body_parts["Head"] = BodyPartSpec(
+                asset_id=head_spec.asset_id,
+                asset_type_id=head_spec.asset_type_id,
+                mesh=head_spec.mesh,
+                mesh_scale=head_spec.mesh_scale,
+                mesh_offset=head_spec.mesh_offset,
+                cframe=head_spec.cframe,
+                transparency=head_spec.transparency,
+                texture_path=head_spec.custom_texture_path,
+                tint_color=(1.0, 1.0, 1.0),
+            )
+            print("[head] DynamicHead wird als R15-Kopfsegment gerendert.")
         for item in assets:
             atype_id = int((item.get("assetType") or {}).get("id") or 0)
             names = ("Head",) if atype_id == 17 else BODY_PART_ASSET_TYPES.get(atype_id, ())
