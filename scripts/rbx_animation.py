@@ -537,13 +537,24 @@ def _collect_bone(
 
 
 def parse_animation_asset(roots: Iterable[RbxNode]) -> AnimationClip | None:
-    """Aus den Wurzeln eines Animations-Assets die Animation heraussuchen."""
+    """Aus den Wurzeln eines Animations-Assets die Animation heraussuchen.
+
+    Gesucht wird in den Wurzeln und in deren Kindern: manche Emote-Assets
+    enthalten die Animation direkt, andere verweisen mit ``AnimationId`` auf
+    ein zweites Asset (dann liefert dieser Aufruf ``None``).
+    """
     sequences = [n for n in roots if n.class_name == "KeyframeSequence"]
     if sequences:
         return parse_keyframe_sequence(sequences[0])
     curves = [n for n in roots if n.class_name == "CurveAnimation"]
     if curves:
         return parse_curve_animation(curves[0])
+    for root in roots:
+        for node in root.descendants():
+            if node.class_name == "KeyframeSequence":
+                return parse_keyframe_sequence(node)
+            if node.class_name == "CurveAnimation":
+                return parse_curve_animation(node)
     return None
 
 

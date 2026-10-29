@@ -716,24 +716,53 @@ def _apply_emote_to_r15(
     classic_emote: Any,
     body_objects: dict[str, Any],
     scene: Any,
-) -> dict[str, Any]:
+    accessory_parents: list[tuple[Any, str]] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Uebertraegt die Emote-Pose auf das R15-Rig der Classic-Szene.
 
     Die Pose wird - wie bei Roblox - ueber die Gelenk-Kette des Rigs
     berechnet: jedes Segment wird um das Gelenk gedreht, an dem es im
     Standard-Rig haengt (Schulter, Ellbogen, Huefte, Knie, Hals, Root), und
-    die Kind-Segmente wandern mit. Fuer jedes Segment mit Rotation wird ein
-    Empty angelegt; Accessoires werden daran gehaengt, damit sie mitlaufen.
+    die Kind-Segmente wandern mit.
 
-    Rueckgabe: die Empties je Bone-Name (fuer mitlaufende Accessoires).
+    Fuer jedes Segment wird ein Empty an der Ruhelage seines Gelenks
+    angelegt. Die Accessoires werden zuerst an diese Empties gehaengt (mit
+    der Inverse der Ruhelage, damit sie ihre Position behalten) und
+    verschieben sich danach automatisch mit der Pose.
+
+    Rueckgabe: (Empties je Bone der Animation, Empties je R15-Segment).
     """
     clip = getattr(classic_emote, "clip", None)
     if clip is None:
-        return {}
+        return {}, {}
     time = clip.preview_time()
     world_rot, world_joint = _emote_world_transforms(clip, time)
 
     bone_empties: dict[str, Any] = {}
+    part_empties: dict[str, Any] = {}
+    for bone in world_rot:
+        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone))
+        empty = bpy.data.objects.new(f"ClassicR15Bone_{bone}", None)
+        scene.collection.objects.link(empty)
+        empty.matrix_world = Matrix(_translation_mat4(*pivot_rest.tolist()).tolist())
+        bone_empties[bone] = empty
+        part_name = bone_to_r15(bone)
+        if part_name:
+            # Accessoires haengen am R15-Segment, auch wenn die Emote
+            # R6-Begriffe benutzt.
+            part_empties.setdefault(part_name, empty)
+    bpy.context.view_layer.update()
+
+    # Accessoires an die Empties haengen, solange die Empties noch auf der
+    # Ruhelage stehen - erst danach wird die Pose gerechnet.
+    for obj, bone_name in accessory_parents or []:
+        empty = part_empties.get(bone_name)
+        if empty is None:
+            continue
+        inverse = np.linalg.inv(np.asarray(empty.matrix_world, dtype=np.float64))
+        obj.parent = empty
+        obj.matrix_parent_inverse = Matrix(inverse.tolist())
+
     applied = 0
     for bone, rot_rbx in world_rot.items():
         r_bl = T3_RBX_TO_BL @ np.asarray(rot_rbx, dtype=np.float64) @ T3_RBX_TO_BL
@@ -742,12 +771,10 @@ def _apply_emote_to_r15(
         pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone))
         pivot_world = _rig_to_bl_point(world_joint[bone])
 
-        empty = bpy.data.objects.new(f"ClassicR15Bone_{bone}", None)
-        scene.collection.objects.link(empty)
-        empty.matrix_world = Matrix(
+        # Das Gelenk wandert an seine neue Position und dreht sich mit.
+        bone_empties[bone].matrix_world = Matrix(
             (_translation_mat4(*pivot_world.tolist()) @ rot4).tolist()
         )
-        bone_empties[bone] = empty
 
         # Das Koerpersegment selbst: um das Gelenk drehen und das Gelenk
         # an seine neue Position verschieben.
@@ -758,7 +785,7 @@ def _apply_emote_to_r15(
             posed = (
                 _translation_mat4(*pivot_world.tolist())
                 @ rot4
-                @ _translation_mat4(*(-pivot_rest.tolist()))
+                @ _translation_mat4(*(-pivot_rest).tolist())
                 @ rest
             )
             obj.matrix_world = Matrix(posed.tolist())
@@ -769,7 +796,7 @@ def _apply_emote_to_r15(
         f"[classic] Emote-Pose aus {clip.source_format} auf {applied} Bones angewendet "
         f"(Vorschau-Moment t={time:.3f}s)."
     )
-    return bone_empties
+    return bone_empties, part_empties
 
 
 def render_classic_scene(
@@ -874,15 +901,9 @@ def render_classic_scene(
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote") and classic_emote is not None:
-        bone_empties = _apply_emote_to_r15(classic_emote, body_objects, scene)
-        bpy.context.view_layer.update()
-        for obj, bone_name in accessory_parents:
-            empty = bone_empties.get(bone_name)
-            if empty is None:
-                continue
-            inverse = np.linalg.inv(np.asarray(empty.matrix_world, dtype=np.float64))
-            obj.parent = empty
-            obj.matrix_parent_inverse = Matrix(inverse.tolist())
+        bone_empties, _part_empties = _apply_emote_to_r15(
+            classic_emote, body_objects, scene, accessory_parents
+        )
     elif classic_pose not in ("None", "Equipped", "Emote"):
         print(f"[classic] Unbekannte Pose {classic_pose!r} - normales Stehen wird verwendet.")
 
