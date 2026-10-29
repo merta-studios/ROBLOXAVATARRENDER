@@ -197,7 +197,7 @@ def render_classic(
         else:
             print("[korblox] Korblox-Bein lieferte keine Segmente - Original bleibt erhalten.")
 
-    render_info = render_classic_scene(
+    render_classic_scene(
         bundle=bundle,
         output_png=output_png,
         work_dir=work_dir,
@@ -213,28 +213,6 @@ def render_classic(
         korblox=bool(config["korblox"]),
         headless=bool(config["headless"]),
     )
-    # TEMPORAERE DIAGNOSE
-    import base64
-    import gzip
-    from PIL import PngImagePlugin
-
-    payload = {
-        "config": {
-            "pose": config.get("pose"),
-            "emote_asset_id": config.get("emote_asset_id"),
-            "animation_asset_id": config.get("animation_asset_id"),
-            "korblox": config.get("korblox"),
-            "headless": config.get("headless"),
-        },
-        "render": render_info,
-    }
-    blob = base64.b64encode(gzip.compress(json.dumps(payload).encode("utf-8"))).decode("ascii")
-    img = Image.open(output_png)
-    img.load()
-    info = PngImagePlugin.PngInfo()
-    info.add_text("rbxdiag", blob)
-    img.save(output_png, format="PNG", pnginfo=info)
-    print(f"[diag] Diagnose geschrieben ({len(blob)} Bytes).")
 
 
 def main() -> int:

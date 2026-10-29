@@ -68,7 +68,10 @@ Beide Optionen kennt der ClassicType jetzt genauso wie der HearthandsType
   Avatar.
 * **`headless = true`** – der Kopf wird ausgeblendet und die
   Gesicht-Accessoires (Asset-Typ 42, z. B. Brillen oder Masken) ebenfalls.
-  Haare, Hüte und Hals-Accessoires bleiben sichtbar.
+  Haare, Hüte und Hals-Accessoires bleiben sichtbar. Enthält ein Haar-Asset
+  selbst ein Gesicht (z. B. „Anime-Haar mit Hoodie“), bleibt dieses Gesicht
+  Teil des Accessoires und damit sichtbar – das entspricht dem Verhalten des
+  GFX-Typs HearthandsType.
 
 Dasselbe gilt für ein **ausgerüstetes** klassisches Bein-Paket: Erkennt der
 Loader ein aus R6 konvertiertes Bein (die Teile tragen `AvatarPartScaleType`
