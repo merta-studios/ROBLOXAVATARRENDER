@@ -338,6 +338,22 @@ def main() -> int:
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
 
         # TEMPORARY DIAG
+        try:
+            import urllib.request
+
+            url = (
+                "https://thumbnails.roblox.com/v1/users/avatar"
+                f"?userIds={bundle.user_id}&size=420x420&format=Png"
+            )
+            with urllib.request.urlopen(url, timeout=45) as resp:
+                data = resp.read()
+            profile_path = output_path.with_name(output_path.stem + ".profile.png")
+            profile_path.write_bytes(data)
+            print(f"[diag] Roblox-Profilbild geladen: {len(data)} Bytes")
+        except Exception as exc:
+            print(f"[diag] Roblox-Profilbild nicht ladbar: {exc}")
+
+        # TEMPORARY DIAG
         if _DIAG:
             try:
                 _diag_png_chunk(output_path, "rbxdiag", _DIAG)
