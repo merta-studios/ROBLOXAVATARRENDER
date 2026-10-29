@@ -211,6 +211,32 @@ jobs:
           path: /tmp/render_out/
           retention-days: 7
 
+      # TEMPORARY: Diagnose-Tag mit Logs, Status-JSON und Render-Bildern.
+      # Wird bei jedem Lauf gepusht, damit die CI-Ausgabe ohne Log-Download
+      # auswertbar ist.
+      - name: Diagnose-Tag veröffentlichen
+        if: always()
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/debug_out
+          cp -f /tmp/blender_stdout-*.log /tmp/debug_out/ 2>/dev/null || true
+          cp -f /tmp/blender_stderr-*.log /tmp/debug_out/ 2>/dev/null || true
+          cp -f /tmp/render_status-*.json /tmp/debug_out/ 2>/dev/null || true
+          cp -f /tmp/fatal_error.txt /tmp/debug_out/ 2>/dev/null || true
+          cp -f /tmp/render_out/*.png /tmp/debug_out/ 2>/dev/null || true
+          cd /tmp/debug_out || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          {
+            for f in *; do
+              [ -f "$f" ] || continue
+              printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$f"
+            done
+          } | git mktree > /tmp/debug_tree.txt
+          TREE_SHA=$(cat /tmp/debug_tree.txt)
+          COMMIT_SHA=$(git commit-tree "$TREE_SHA" -m "Render diagnostics")
+          git push --force origin "${COMMIT_SHA}:refs/tags/latest-render-debug" >/dev/null 2>&1 || true
+
       - name: Workflow-Übersicht ausgeben
         if: always()
         run: |
