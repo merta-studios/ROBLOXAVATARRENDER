@@ -1,5 +1,5 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "Alamer_Roblox"
+username = "MertaStudios"
 
 # Hintergrund: "transparent", Hex-Farbe #RGB oder #RRGGBB, direkte http(s)-Bild-URL
 # (max. 50 MB), lokaler Motivname (Originalfarbe) oder "Farbordner/Motiv", z. B.
@@ -37,7 +37,7 @@ material = "Glossy"
 #   "Animation" - Pose aus einer Animation nach animation_asset_id, z. B.
 #                 "Ninja Run" (658830056). Auch hier gilt die erste Keyframe
 #                 der Animation als Vorschau-Moment.
-pose = "Emote"
+pose = "Equipped"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
 emote_asset_id = 5917570207
