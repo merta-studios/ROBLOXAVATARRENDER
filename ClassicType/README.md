@@ -82,6 +82,25 @@ und ihre Rig-Attachments liegen in R6-Koordinaten), übernimmt er nur das
 Oberbein. Echte R15-Pakete (z. B. „Headless Horseman Left Leg“, 134082507)
 behalten alle drei Segmente.
 
+## Der Kopf: DynamicHead (Asset-Typ 79)
+
+Roblox' neuer Avatar-Kopf ist ein eigenes Asset (Asset-Typ 79, „DynamicHead“):
+ein `SpecialMesh` (MeshType 5) mit der klassischen Kopfgeometrie und einer
+Textur, in der das **Gesicht bereits enthalten** ist. Die Kopfposition im
+Rig steht nicht in einem `CFrame`, sondern in `Vector3Value`-Attachments
+(`NeckRigAttachment`, `HairAttachment`, `HatAttachment`,
+`FaceFrontAttachment`, `FaceCenterAttachment`). Ihre Werte liegen im lokalen
+Space des Assets (Ursprung = Kopfmitte), die offiziellen
+`R15FixedRigAttachmentMap`-Positionen dagegen im Rig-Space. Die Differenz
+beider – als Median über alle passenden Attachments – ist damit genau die
+Position, an der der Kopf im Rig hängt.
+
+Der DynamicHead wird deshalb wie ein Körperteil-Asset behandelt und
+ersetzt den Blocky-Kopf: der Kopf sitzt damit exakt dort, wo Roblox ihn
+setzt, und zeigt dasselbe Gesicht wie die 2D-Profil-Vorschau. Der klassische
+Kopf (Asset-Typ 17) bleibt beim Blocky-Rig – dort liefert Roblox die Optik
+über die klassische Gesichtstextur.
+
 ## Körperteile aus dem Inventar (Asset-Typen 17, 27–31)
 
 Inventory-Körperteile (z. B. „Roblox 2.0 Torso“) werden als echte Meshes mit

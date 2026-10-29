@@ -1214,10 +1214,6 @@ def load_avatar_bundle(
         face_texture_path=face_tex_path,
     )
     head_asset_item = (by_type.get(17) or by_type.get(79) or [None])[0]
-    print(
-        f"[head] Kopf-Assets in der Avatar-API: Typ 17={len(by_type.get(17) or [])}, "
-        f"Typ 79={len(by_type.get(79) or [])}"
-    )
     if head_asset_item is not None:
         head_aid = int(head_asset_item["id"])
         head_spec.asset_id = head_aid
@@ -1226,32 +1222,6 @@ def load_avatar_bundle(
         try:
             roots = parse_rbx_model(raw_head)
             nodes = [n for r in roots for n in ([r] + r.descendants())]
-            print(
-                f"[head] Asset {head_aid}: "
-                f"{[(n.class_name, n.name) for n in nodes][:12]}"
-            )
-            for node in nodes:
-                if node.class_name == "SpecialMesh":
-                    print(
-                        f"[head] SpecialMesh: MeshType={node.prop('MeshType')} "
-                        f"Scale={node.prop('Scale')} Offset={node.prop('Offset')} "
-                        f"MeshId={node.prop('MeshId', 'MeshContent')} "
-                        f"TextureId={node.prop('TextureId', 'TextureID', 'TextureContent')} "
-                        f"Transparency={node.prop('Transparency')} "
-                        f"CFrame={node.prop('CFrame')} "
-                        f"Eltern={node.parent.class_name if node.parent else None}"
-                    )
-                elif node.class_name == "Vector3Value":
-                    print(
-                        f"[head] Vector3Value {node.name} = {node.prop('Value')} "
-                        f"Eltern={node.parent.class_name if node.parent else None}"
-                    )
-                elif node.class_name in ("Part", "MeshPart"):
-                    print(
-                        f"[head] Part {node.name}: CFrame={node.prop('CFrame')} "
-                        f"Transparency={node.prop('Transparency')} "
-                        f"Eltern={node.parent.class_name if node.parent else None}"
-                    )
             # Dynamic heads sind MeshParts mit eigener, UV-gebundener Gesichts-/Kopftextur.
             mp = next((n for n in nodes if n.class_name == "MeshPart"), None)
             sm = next((n for n in nodes if n.class_name == "SpecialMesh"), None)
@@ -1274,15 +1244,6 @@ def load_avatar_bundle(
                         origin = _head_rig_origin(nodes)
                         if origin is not None:
                             head_spec.cframe = _translation_cframe(origin)
-                            print(
-                                f"[head] Kopf sitzt im Rig bei "
-                                f"({origin[0]:.3f}, {origin[1]:.3f}, {origin[2]:.3f})."
-                            )
-                        print(
-                            f"[head] DynamicHead {head_aid}: Mesh geladen "
-                            f"(Groesse={tuple(round(v, 3) for v in ext)}, "
-                            f"Scale={tuple(round(v, 3) for v in mscale)})."
-                        )
                         sa = mp.find_first_child_of_class("SurfaceAppearance")
                         tid = extract_asset_id(
                             (sa.prop("ColorMap", "ColorMapContent") if sa else None)
@@ -1316,10 +1277,6 @@ def load_avatar_bundle(
                         origin = _head_rig_origin(nodes)
                         if origin is not None:
                             head_spec.cframe = _translation_cframe(origin)
-                            print(
-                                f"[head] Kopf sitzt im Rig bei "
-                                f"({origin[0]:.3f}, {origin[1]:.3f}, {origin[2]:.3f})."
-                            )
                         tid = extract_asset_id(sm.prop("TextureId", "TextureID", "TextureContent"))
                         if tid:
                             himg = client.fetch_image(tid)
@@ -1330,6 +1287,12 @@ def load_avatar_bundle(
             raise
         except Exception as exc:
             print(f"[head] Kopf-Asset {head_aid} nicht auswertbar: {exc!r}")
+        if head_spec.cframe != IDENTITY_CFRAME:
+            position = cframe_position(head_spec.cframe)
+            print(
+                "[head] Kopf sitzt im Rig bei "
+                f"({position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f})."
+            )
             # Falls es direkt eine .mesh Datei war
             if raw_head.startswith(b"version "):
                 mdata = parse_rbx_mesh(raw_head)

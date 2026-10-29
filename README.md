@@ -3,7 +3,7 @@
 Vollautomatischer GitHub-Actions-Renderer für Roblox-Avatare auf Basis von `WomanRig.blend` und der **Roblox Open Cloud API**. Es gibt zwei Render-Typen (GFX-Typen), jeder mit eigener Konfigurationsdatei:
 
 - **`HearthandsType/configs.toml`** – "Preppy Hearthands Type": das klassische R6-Render aus `WomanRig.blend` mit optionalem Korblox-Bein und Headless-Look.
-- **`ClassicType/configs.toml`** – der Avatar wird als R15 komplett über die Roblox Open Cloud API geladen (Layered Clothing und Equipment-Accessoires werden ausgeschlossen). Fehlende Körperteile ersetzt der offizielle Standard-R15-Blocky-Rig; dazu kommen wählbare Posen, Drehung und Abstand von oben/unten.
+- **`ClassicType/configs.toml`** – der Avatar wird als R15 komplett über die Roblox Open Cloud API geladen (Layered Clothing und Equipment-Accessoires werden ausgeschlossen). Fehlende Körperteile ersetzt der offizielle Standard-R15-Blocky-Rig (der neue Roblox-Kopf „DynamicHead“ wird dagegen als echtes Avatar-Asset gerendert, damit der Kopf samt Gesicht exakt dem der Roblox-Profil-Vorschau entspricht); dazu kommen wählbare Posen, Drehung und Abstand von oben/unten.
 
 Die gemeinsamen Hintergründe bleiben im geteilten Ordner [`backgrounds/`](./backgrounds/) und gehören nicht zu einem einzelnen GFX-Typ. Neben den bestehenden Farbordnern gibt es jetzt auch [`backgrounds/weiss/`](./backgrounds/weiss/) und [`backgrounds/schwarz/`](./backgrounds/schwarz/) mit je drei ruhigen, monochromen Avatar-Hintergründen.
 
