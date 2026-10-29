@@ -1335,6 +1335,43 @@ def _load_r15_body_segments(
     return result
 
 
+def _apply_body_part_probe(assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ersetzt ein Inventar-Koerperteil temporaer durch ein Probe-Asset.
+
+    Diagnose-Hilfe: ``PROBE_BODY_PART_ASSETS="100234186631845:31"`` (Asset-ID
+    und Asset-Typ, durch ``:`` getrennt, mehrere durch ``,``) ersetzt das
+    Koerperteil dieses Typs im Inventar. So laesst sich ein Koerperteil-Asset
+    pruefen, das der Avatar gerade nicht ausgeruestet hat.
+    """
+    spec = os.environ.get("PROBE_BODY_PART_ASSETS", "").strip()
+    if not spec:
+        return assets
+    result = list(assets)
+    for entry in spec.replace(";", ",").split(","):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        raw_id, _, raw_type = entry.partition(":")
+        if not raw_id.strip().isdigit() or not raw_type.strip().isdigit():
+            continue
+        asset_id = int(raw_id.strip())
+        asset_type = int(raw_type.strip())
+        result = [
+            item
+            for item in result
+            if int((item.get("assetType") or {}).get("id") or 0) != asset_type
+        ]
+        result.append(
+            {
+                "id": asset_id,
+                "name": f"Probe{asset_id}",
+                "assetType": {"id": asset_type},
+            }
+        )
+        print(f"[probe] Koerperteil-Asset {asset_id} (Typ {asset_type}) ersetzt das Inventar-Asset.")
+    return result
+
+
 def load_avatar_bundle(
     username: str,
     api_key: str,
@@ -1374,6 +1411,7 @@ def load_avatar_bundle(
     body_colors = _extract_body_colors(meta)
 
     assets = meta.get("assets") or []
+    assets = _apply_body_part_probe(assets)
     by_type: dict[int, list[dict[str, Any]]] = {}
     for item in assets:
         atype = int((item.get("assetType") or {}).get("id") or 0)

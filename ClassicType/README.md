@@ -116,15 +116,32 @@ ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
 * **Platzierung** – Die Position kommt aus dem im Asset gespeicherten
   `CFrame` des Segments (relativ zur `HumanoidRootPart` des Assets).
   Zusätzlich wird das Asset über seine **Rig-Attachments** am Standard-Rig
-  ausgerichtet: Roblox hängt ein Körperteil-Asset über die
-  `R15FixedRigAttachmentMap` ein (Roblox-Client-Plugin `AssetImporter`,
-  `Utility/RigSetup/FixedRigPositions.luac.s`). Weichen die
-  Rig-Attachments eines Assets von dieser Map ab – wie bei vielen aus R6
-  konvertierten Paketen, die 1–2 Studs zu tief sitzen –, wird der
-  Versatz als Median über alle passenden Attachments berechnet und auf alle
-  Segmente des Assets angewendet. Die CFrames werden als Roblox-Koordinaten
-  interpretiert und in Blender-Koordinaten umgerechnet
-  (`x_bl, y_bl, z_bl = -x_rbx, z_rbx, y_rbx`, Root → `z = +2`).
+  ausgerichtet: Roblox hängt ein Körperteil-Asset an dem Gelenk ein, an dem
+  das **Wurzel-Segment** des Assets selbst hängt
+  (`Humanoid:BuildRigFromAttachments()` baut die Motor6D-Kette aus den
+  `*RigAttachment`-CFrames des Assets selbst,
+  `ReferenceBodyCreator/…/MeshManipulation/AttachmentUtils.lua`).
+  Deshalb gilt die Roblox-Semantik: **ein Asset = ein starrer Versatz für
+  alle seine Segmente**. Der Versatz wird über das **Wurzelgelenk**
+  bestimmt, also über das Attachment, das genau einem Segment des Assets
+  zugeordnet ist (z. B. `RightHipRigAttachment` am `RightUpperLeg`). Er ist
+  die Differenz zwischen der absoluten Position dieses Attachments im Asset
+  und dem Zielwert des Standard-Rigs
+  (`R15FixedRigAttachmentMap`, Roblox-Client-Plugin `AssetImporter`,
+  `Utility/RigSetup/FixedRigPositions.luac.s`) und wird auf **alle** Segmente
+  des Assets angewendet.
+  * **Warum ein starrer Versatz?** Die Geometrie *innerhalb* eines Assets
+    ist durch die Abstände der eigenen Attachments festgelegt. Werden die
+    Segmente einzeln auf Standardziele umgehängt, zerfällt das Asset (ein
+    Bein-Paket in Mini-Proportionen hinge dann zerstückelt am Standard-Rig,
+    obwohl Roblox es geschlossen einhängt). Der frühere Median-Versatz über
+    alle Attachments traf außerdem das falsche Ziel, wenn das Asset nicht
+    in der Mitte des Standard-Rigs sitzt (z. B. „Cute Mini Green Coconut –
+    Right Leg“: der Median läge zwischen Hüfte und Fuß, der Wurzelgelenk-
+    Versatz exakt an der Hüfte).
+  * Die CFrames werden als Roblox-Koordinaten interpretiert und in
+    Blender-Koordinaten umgerechnet
+    (`x_bl, y_bl, z_bl = -x_rbx, z_rbx, y_rbx`, Root → `z = +2`).
 * **Textur** – Die Textur kommt aus der `SurfaceAppearance` (`ColorMap`) des
   Segments, sonst vom `TextureID` des MeshParts. Klassische Pakete wie
   „Roblox 2.0“ bringen gar keine eigene Textur mit (am MeshPart ist
