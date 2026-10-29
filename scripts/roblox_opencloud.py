@@ -6,6 +6,7 @@ import base64
 import gzip
 import io
 import math
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1051,6 +1052,53 @@ def _load_r15_body_segments(
         f"[body_part] Asset {asset_id} (Typ {asset_type_id}): Segmente "
         f"{', '.join(sorted(node.name for node in chosen)) or 'keine'}."
     )
+    for node in chosen:
+        part_cframe = _absolute_cframe(node)
+        details = []
+        for attachment in node.children:
+            if attachment.class_name != "Attachment":
+                continue
+            position = cframe_position(
+                compose_cframes(part_cframe, attachment.prop("CFrame", default=IDENTITY_CFRAME))
+            )
+            target = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment.name)
+            delta = (
+                f"({target[0] - position[0]:.3f}, {target[1] - position[1]:.3f}, {target[2] - position[2]:.3f})"
+                if target is not None else "kein Standard-Ziel"
+            )
+            details.append(
+                f"{attachment.name} @ ({position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}) "
+                f"Zielversatz {delta}"
+            )
+        print(
+            f"[body_part]   {node.name}: Part ({part_cframe[0]:.3f}, {part_cframe[1]:.3f}, "
+            f"{part_cframe[2]:.3f}) | {'; '.join(details) or 'keine Rig-Attachments'}"
+        )
+    # "AvatarPartScaleType" bestimmt, welche Attachment-Map Roblox zum
+    # Ausrichten benutzt (Classic -> R15Fixed, Normal -> AnthroNormal,
+    # Slender -> AnthroSlender).
+    for root in roots:
+        for node in [root] + root.descendants():
+            if node.class_name == "StringValue" and node.name == "AvatarPartScaleType":
+                print(f"[body_part]   AvatarPartScaleType = {node.prop('Value')!r}")
+    # Diagnose: Ein unplausibler Versatz (> 2 Studs) deutet auf eine
+    # fehlerhafte Ausrichtung hin. Dann die komplette Asset-Struktur
+    # ausgeben, damit die Ursache nachvollziehbar ist.
+    if max(abs(v) for v in align_offset) > 2.0:
+        print(f"[body_part]   !! Verdachtig: Struktur von Asset {asset_id}:")
+        for root in roots:
+            for node in [root] + root.descendants():
+                try:
+                    pos = cframe_position(node.prop("CFrame", default=IDENTITY_CFRAME))
+                    extra = ""
+                    if node.class_name == "StringValue":
+                        extra = f" = {node.prop('Value')!r}"
+                    print(
+                        f"[body_part]     {node.class_name} '{node.name}' @ "
+                        f"({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}){extra}"
+                    )
+                except Exception:
+                    continue
     character_texture = _character_mesh_texture(roots)
 
     result: dict[str, BodyPartSpec] = {}
