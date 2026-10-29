@@ -488,9 +488,15 @@ class RobloxOpenCloudClient:
         if not mid:
             raise PipelineError(f"Korblox-Asset {KORBLOX_RIGHT_LEG_ASSET_ID} enthaelt kein Mesh.")
 
-        mdata = parse_rbx_mesh(self.fetch_asset_bytes(mid))
-
-        tex_id: int | None = None
+        raw_korblox_mesh = self.fetch_asset_bytes(mid)
+        mdata = parse_rbx_mesh(raw_korblox_mesh)
+        _report_mesh_uv(
+            f"korblox {KORBLOX_RIGHT_LEG_ASSET_ID} mesh {mid}",
+            mdata,
+            raw_korblox_mesh,
+            work_dir,
+            f"mesh_korblox_{mid}.mesh",
+        )
         if texture_node is not None:
             sa = texture_node.find_first_child_of_class("SurfaceAppearance")
             if sa is not None:
@@ -822,6 +828,40 @@ def _mesh_bbox_size(mesh: MeshData) -> tuple[float, float, float]:
         float(ext[1]) if ext[1] > 1e-6 else 1.0,
         float(ext[2]) if ext[2] > 1e-6 else 1.0,
     )
+
+
+def _report_mesh_uv(
+    tag: str,
+    mesh: MeshData,
+    raw: bytes | None = None,
+    work_dir: Path | None = None,
+    filename: str | None = None,
+) -> None:
+    """Protokolliert Formatversion und UV-Bereich eines Meshes.
+
+    Die V-Konvention der Mesh-Dateien haengt an der Formatversion: v1.00/1.01
+    speichert die Texturkoordinate invertiert, v2.00 und neuer speichern sie
+    roh (siehe ``scripts/rbx_formats.py``). Ohne die Version jedes einzelnen
+    Meshes laesst sich ein UV-Fehler nicht eindeutig einem Format zuordnen,
+    deshalb protokolliert der Lader sie fuer Kopf, Accessoires und Koerper-
+    teile. Die Rohdaten landen zusaetzlich als ``mesh_*.mesh`` im Arbeits-
+    verzeichnis und werden vom Render-Pipeline-Artefakt eingesammelt.
+    """
+    if mesh.uvs:
+        us = [uv[0] for uv in mesh.uvs]
+        vs = [uv[1] for uv in mesh.uvs]
+        uv_info = f"u={min(us):.4f}..{max(us):.4f} v={min(vs):.4f}..{max(vs):.4f}"
+    else:
+        uv_info = "keine UVs"
+    print(
+        f"[mesh] {tag}: version={mesh.version} verts={len(mesh.positions)} "
+        f"faces={len(mesh.faces)} {uv_info}"
+    )
+    if raw is not None and work_dir is not None and filename:
+        try:
+            (work_dir / filename).write_bytes(raw)
+        except OSError as exc:
+            print(f"[mesh] {tag}: Rohdaten nicht speicherbar: {exc}")
 
 
 def _compute_meshpart_scale(node: RbxNode, mesh: MeshData) -> tuple[float, float, float]:
@@ -1271,6 +1311,13 @@ def _load_r15_body_segments(
                 continue
             raw_mesh = client.fetch_asset_bytes(mid)
             mesh = parse_rbx_mesh(raw_mesh)
+            _report_mesh_uv(
+                f"koerperteil {asset_id}/{name} mesh {mid}",
+                mesh,
+                raw_mesh,
+                work_dir,
+                f"mesh_bp_{asset_id}_{name}_{mid}.mesh",
+            )
             if not mesh.positions or not mesh.faces:
                 continue
             scale = _compute_meshpart_scale(node, mesh) if sm is None else tuple(float(v) for v in sm.prop("Scale", default=(1, 1, 1)))
@@ -1518,7 +1565,15 @@ def load_avatar_bundle(
                 if trans >= 0.98:
                     head_spec.kind = "headless"
                 elif mid:
-                    mdata = parse_rbx_mesh(client.fetch_asset_bytes(mid))
+                    raw_head_mesh = client.fetch_asset_bytes(mid)
+                    mdata = parse_rbx_mesh(raw_head_mesh)
+                    _report_mesh_uv(
+                        f"head/DynamicHead {mid}",
+                        mdata,
+                        raw_head_mesh,
+                        work_dir,
+                        f"mesh_head_{mid}.mesh",
+                    )
                     mscale = _compute_meshpart_scale(mp, mdata)
                     ext = _mesh_bbox_size(mdata)
                     if max(ext[0] * mscale[0], ext[1] * mscale[1], ext[2] * mscale[2]) < 0.08:
@@ -1551,7 +1606,15 @@ def load_avatar_bundle(
                 soff = sm.prop("Offset", default=(0.0, 0.0, 0.0))
                 mid = extract_asset_id(sm.prop("MeshId", "MeshContent"))
                 if (mtype == 5 or mid) and mid:
-                    mdata = parse_rbx_mesh(client.fetch_asset_bytes(mid))
+                    raw_head_mesh = client.fetch_asset_bytes(mid)
+                    mdata = parse_rbx_mesh(raw_head_mesh)
+                    _report_mesh_uv(
+                        f"head/SpecialMesh {mid}",
+                        mdata,
+                        raw_head_mesh,
+                        work_dir,
+                        f"mesh_head_sm_{mid}.mesh",
+                    )
                     ext = _mesh_bbox_size(mdata)
                     if max(ext[0] * abs(sscale[0]), ext[1] * abs(sscale[1]), ext[2] * abs(sscale[2])) < 0.08:
                         head_spec.kind = "headless"
@@ -1583,6 +1646,13 @@ def load_avatar_bundle(
             # Falls es direkt eine .mesh Datei war
             if raw_head.startswith(b"version "):
                 mdata = parse_rbx_mesh(raw_head)
+                _report_mesh_uv(
+                    f"head/roh {head_aid}",
+                    mdata,
+                    raw_head,
+                    work_dir,
+                    f"mesh_head_raw_{head_aid}.mesh",
+                )
                 ext = _mesh_bbox_size(mdata)
                 if max(ext) < 0.08:
                     head_spec.kind = "headless"
@@ -1697,7 +1767,15 @@ def load_avatar_bundle(
             mid = extract_asset_id(handle.prop("MeshId", "MeshContent"))
             if not mid:
                 continue
-            mesh_data = parse_rbx_mesh(client.fetch_asset_bytes(mid))
+            raw_acc_mesh = client.fetch_asset_bytes(mid)
+            mesh_data = parse_rbx_mesh(raw_acc_mesh)
+            _report_mesh_uv(
+                f"accessoire/MeshPart {aid} ({aname}) mesh {mid}",
+                mesh_data,
+                raw_acc_mesh,
+                work_dir,
+                f"mesh_acc_{aid}_{mid}.mesh",
+            )
             mesh_scale = _compute_meshpart_scale(handle, mesh_data)
             sa = handle.find_first_child_of_class("SurfaceAppearance")
             if sa is not None:
@@ -1721,7 +1799,15 @@ def load_avatar_bundle(
             mid = extract_asset_id(sm.prop("MeshId", "MeshContent"))
             if not mid:
                 continue
-            mesh_data = parse_rbx_mesh(client.fetch_asset_bytes(mid))
+            raw_acc_mesh = client.fetch_asset_bytes(mid)
+            mesh_data = parse_rbx_mesh(raw_acc_mesh)
+            _report_mesh_uv(
+                f"accessoire/SpecialMesh {aid} ({aname}) mesh {mid}",
+                mesh_data,
+                raw_acc_mesh,
+                work_dir,
+                f"mesh_acc_{aid}_{mid}.mesh",
+            )
             sc = sm.prop("Scale", default=(1.0, 1.0, 1.0))
             of = sm.prop("Offset", default=(0.0, 0.0, 0.0))
             vc = sm.prop("VertexColor", default=(1.0, 1.0, 1.0))

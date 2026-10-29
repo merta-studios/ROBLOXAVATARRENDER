@@ -562,3 +562,54 @@ class BodyPartProbeTests(unittest.TestCase):
         assets = [{"id": 1, "name": "Torso", "assetType": {"id": 27}}]
         with patch.dict("os.environ", {}, clear=True):
             self.assertEqual(_apply_body_part_probe(assets), assets)
+
+
+class MeshVersionLogTests(unittest.TestCase):
+    """Diagnose: Formatversion und UV-Bereich jedes geladenen Meshes.
+
+    Die V-Konvention der Mesh-Dateien haengt an der Formatversion (v1.00/1.01
+    invertiert, v2.00+ roh). Kopf- und Accessoire-Meshes wurden bisher nicht
+    protokolliert, deshalb war ein UV-Fehler dort nicht zuordenbar.
+    """
+
+    def test_report_writes_raw_mesh_and_logs_the_version(self):
+        import io
+        from contextlib import redirect_stdout
+
+        from scripts.roblox_opencloud import _report_mesh_uv
+
+        mesh = MeshData(
+            version="4.01",
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            normals=[(0.0, 0.0, 1.0)] * 3,
+            uvs=[(0.25, 0.75), (0.5, 0.5), (0.125, 1.0)],
+            colors=None,
+            faces=[(0, 1, 2)],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                _report_mesh_uv("test/head 1", mesh, b"version 4.01\n...", work_dir, "mesh_head_1.mesh")
+            log = buf.getvalue()
+            self.assertIn("version=4.01", log)
+            self.assertIn("u=0.1250..0.5000", log)
+            self.assertIn("v=0.5000..1.0000", log)
+            written = work_dir / "mesh_head_1.mesh"
+            self.assertTrue(written.exists())
+            self.assertEqual(written.read_bytes(), b"version 4.01\n...")
+
+    def test_report_without_raw_bytes_writes_nothing(self):
+        import io
+        from contextlib import redirect_stdout
+
+        from scripts.roblox_opencloud import _report_mesh_uv
+
+        mesh = MeshData("2.00", [(0.0, 0.0, 0.0)], [(0.0, 0.0, 1.0)], [], None, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                _report_mesh_uv("test/ohne UVs", mesh)
+            self.assertIn("keine UVs", buf.getvalue())
+            self.assertEqual(list(work_dir.iterdir()), [])
