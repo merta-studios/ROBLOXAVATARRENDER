@@ -821,41 +821,6 @@ def _world_bbox(objects: list[Any]) -> tuple[np.ndarray, np.ndarray] | None:
     return (lo, hi) if found else None
 
 
-_DIAG_SCENE: dict[str, Any] = {}
-
-
-def _diag_part_boxes(body_objects: dict[str, Any]) -> dict[str, list[float]]:
-    """TEMPORARY: Welt-Bounding-Boxen aller R15-Segmente."""
-    out: dict[str, list[float]] = {}
-    bpy.context.view_layer.update()
-    for name, obj in (body_objects or {}).items():
-        if obj is None:
-            continue
-        corners = np.asarray([tuple(c) for c in obj.bound_box], dtype=np.float64)
-        if corners.size == 0:
-            continue
-        mw = np.asarray(obj.matrix_world, dtype=np.float64)
-        world = corners @ mw[:3, :3].T + mw[:3, 3]
-        lo, hi = world.min(axis=0), world.max(axis=0)
-        out[name] = [round(float(v), 4) for v in (*lo, *hi)]
-    return out
-
-
-def _diag_accessory_boxes(accessory_parents: list[tuple[Any, str]] | None) -> dict[str, list[float]]:
-    """TEMPORARY: Welt-Bounding-Boxen der Accessoires."""
-    out: dict[str, list[float]] = {}
-    bpy.context.view_layer.update()
-    for obj, bone_name in accessory_parents or []:
-        corners = np.asarray([tuple(c) for c in obj.bound_box], dtype=np.float64)
-        if corners.size == 0:
-            continue
-        mw = np.asarray(obj.matrix_world, dtype=np.float64)
-        world = corners @ mw[:3, :3].T + mw[:3, 3]
-        lo, hi = world.min(axis=0), world.max(axis=0)
-        out[f"{obj.name}|{bone_name}"] = [round(float(v), 4) for v in (*lo, *hi)]
-    return out
-
-
 def _emote_joint_rig(
     bone_name: str,
     scale: "BodyScale | None" = None,
@@ -1193,9 +1158,7 @@ def render_classic_scene(
         accessory_parents.append((obj, _accessory_bone(acc)))
         accessory_count += 1
 
-    # TEMPORARY DIAG: Ruhelage aller Koerperteile und Accessoires.
-    _diag_rest = _diag_part_boxes(body_objects)
-    _diag_acc_rest = _diag_accessory_boxes(accessory_parents)
+    # Gelenkpositionen aus den Rig-Attachments der Koerperteil-Assets.
     _pivot_overrides = _rig_pivot_overrides(body_parts)
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
@@ -1206,38 +1169,6 @@ def render_classic_scene(
         )
     elif classic_pose not in ("None", "Equipped", "Emote", "Animation"):
         print(f"[classic] Unbekannte Pose {classic_pose!r} - normales Stehen wird verwendet.")
-
-    # TEMPORARY DIAG
-    _DIAG_SCENE.update(
-        {
-            "parts_rest": _diag_rest,
-            "parts_posed": _diag_part_boxes(body_objects),
-            "acc_rest": _diag_acc_rest,
-            "acc_posed": _diag_accessory_boxes(accessory_parents),
-            "pivot_overrides": {
-                name: [round(float(v), 4) for v in pos]
-                for name, pos in _pivot_overrides.items()
-            },
-            "rig_attachments": {
-                name: {
-                    att: [round(float(v), 4) for v in pos]
-                    for att, pos in (getattr(spec, "rig_attachments", None) or {}).items()
-                }
-                for name, spec in (body_parts or {}).items()
-            },
-            "rig_attachments_raw": {
-                name: {
-                    att: [round(float(v), 4) for v in pos]
-                    for att, pos in (getattr(spec, "rig_attachments_raw", None) or {}).items()
-                }
-                for name, spec in (body_parts or {}).items()
-            },
-            "standard_attachments": {
-                att: [round(float(v), 4) for v in pos]
-                for att, pos in R15_FIXED_ATTACHMENT_POSITIONS.items()
-            },
-        }
-    )
 
     # 4. Drehung um die vertikale Achse + Abstaende von oben/unten.
     bbox = _world_bbox(render_objects)

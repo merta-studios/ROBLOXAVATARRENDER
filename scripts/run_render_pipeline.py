@@ -44,7 +44,6 @@ from scripts.render_config import (
 )
 
 
-_DIAG: dict[str, Any] = {}
 
 
 def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> None:
@@ -182,27 +181,6 @@ def resolve_classic_pose(
             print("[pose] Keine gueltige emote_asset_id - Pose bleibt 'None'.")
             pose = "None"
 
-    # TEMPORARY DIAG
-    if classic_emote is not None:
-        try:
-            clip = classic_emote.clip
-            t = float(clip.preview_time())
-            rots = clip.local_rotations(t)
-            _DIAG["pose"] = pose
-            _DIAG["emote_asset_id"] = emote_asset_id
-            _DIAG["format"] = clip.source_format
-            _DIAG["preview_time"] = t
-            _DIAG["n_times"] = len(clip.times)
-            _DIAG["bones"] = {
-                name: {
-                    "parent": track.parent,
-                    "rot": [round(float(v), 5) for v in rots[name].flatten()],
-                }
-                for name, track in clip.tracks.items()
-            }
-        except Exception as exc:  # pragma: no cover - Diagnose
-            print(f"[diag] Clip-Diagnose fehlgeschlagen: {exc}")
-
     return pose, classic_emote, emote_asset_id
 
 
@@ -339,7 +317,9 @@ def main() -> int:
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
 
-        # TEMPORARY DIAG
+        # Referenzbild: das oeffentliche Roblox-Profilbild des Avatars. Bei
+        # pose = "Equipped" zeigt es genau die Pose, die der Render treffen
+        # soll (die Leerlauf-Animation der 2D-Profil-Vorschau).
         try:
             import urllib.request
 
@@ -356,26 +336,11 @@ def main() -> int:
                     data = resp.read()
                 profile_path = output_path.with_name(output_path.stem + ".profile.png")
                 profile_path.write_bytes(data)
-                print(f"[diag] Roblox-Profilbild geladen: {len(data)} Bytes")
+                print(f"[profil] Roblox-Profilbild geladen: {len(data)} Bytes")
             else:
-                print(f"[diag] Kein Profilbild-URL: {payload}")
+                print(f"[profil] Kein Profilbild-URL: {payload}")
         except Exception as exc:
-            print(f"[diag] Roblox-Profilbild nicht ladbar: {exc}")
-
-        # TEMPORARY DIAG: Diagnose als JSON-Datei neben dem Render ablegen.
-        try:
-            from scripts.classic_render import _DIAG_SCENE
-
-            diag = dict(_DIAG)
-            diag.update(_DIAG_SCENE)
-            if diag:
-                diag_path = output_path.with_name(output_path.stem + ".diag.json")
-                diag_path.write_text(
-                    json.dumps(diag, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-                print(f"[diag] Diagnose geschrieben: {diag_path}")
-        except Exception as exc:  # pragma: no cover - Diagnose
-            print(f"[diag] Diagnose konnte nicht geschrieben werden: {exc}")
+            print(f"[profil] Roblox-Profilbild nicht ladbar: {exc}")
 
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(

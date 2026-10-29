@@ -211,9 +211,9 @@ jobs:
           path: /tmp/render_out/
           retention-days: 7
 
-      # TEMPORARY: Diagnose-Tag mit Logs, Status-JSON und Render-Bildern.
-      # Wird bei jedem Lauf gepusht, damit die CI-Ausgabe ohne Log-Download
-      # auswertbar ist.
+      # Diagnose-Tag mit Logs, Status-JSON und Render-Bildern. Wird bei jedem
+      # Lauf gepusht: die CI-Logs selbst sind ueber die GitHub-API nicht
+      # abrufbar, ueber diesen Tag aber auswertbar.
       - name: Diagnose-Tag veröffentlichen
         if: always()
         run: |

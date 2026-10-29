@@ -116,9 +116,6 @@ class BodyPartSpec:
     # Rig neu auf ("Humanoid:BuildRigFromAttachments()"), die Gelenke liegen
     # also dort, wo das Asset seine eigenen Attachments hat.
     rig_attachments: dict[str, tuple[float, float, float]] = field(default_factory=dict)
-    # Dieselben Positionen ohne den Ausgleichs-Versatz: so laesst sich
-    # pruefen, wie weit das Asset vom Standard-Rig abweicht.
-    rig_attachments_raw: dict[str, tuple[float, float, float]] = field(default_factory=dict)
 
 
 @dataclass
@@ -1056,7 +1053,6 @@ def _load_r15_body_segments(
                 tint_color=tint,
                 alpha_mode=alpha_mode,
                 rig_attachments=_part_rig_attachments(node, align_offset),
-                rig_attachments_raw=_part_rig_attachments(node, (0.0, 0.0, 0.0)),
             )
         except Exception as exc:
             print(f"[body_part] Segment {name} von {asset_id} konnte nicht geladen werden: {exc}")

@@ -53,6 +53,25 @@ class BodyScaleValueTests(unittest.TestCase):
 
 
 @unittest.skipIf(bpy is None, "Blender-Systembibliotheken fehlen")
+class RigPivotTests(unittest.TestCase):
+    def test_pivots_come_from_the_assets_own_rig_attachments(self):
+        """Roblox baut das Rig aus den Attachments des Assets neu auf."""
+        from scripts.classic_render import _rig_pivot_overrides
+
+        spec = SimpleNamespace(
+            rig_attachments={"RightShoulderRigAttachment": (1.25, 1.9, 0.0)}
+        )
+        overrides = _rig_pivot_overrides({"RightUpperArm": spec})
+        self.assertEqual(overrides["RightUpperArm"], (1.25, 1.9, 0.0))
+
+    def test_segments_without_attachments_keep_the_standard_rig(self):
+        from scripts.classic_render import _rig_pivot_overrides
+
+        spec = SimpleNamespace(rig_attachments={})
+        self.assertEqual(_rig_pivot_overrides({"RightUpperArm": spec}), {})
+        self.assertEqual(_rig_pivot_overrides(None), {})
+
+
 class BodyScaleRenderTests(unittest.TestCase):
     def test_part_position_and_floor_offset_follow_the_height_scale(self):
         from scripts.classic_render import BodyScale, _body_part_matrix_bl
@@ -65,6 +84,33 @@ class BodyScaleRenderTests(unittest.TestCase):
         self.assertAlmostEqual(location.x, -2.0, places=5)
         self.assertAlmostEqual(location.y, 2.0, places=5)
         self.assertAlmostEqual(location.z, 3.0 + 6.0, places=5)
+
+    def test_head_follows_the_height_scale_without_shearing(self):
+        """Der Kopf sitzt auf der skalierten Halshoehe und bleibt uniform.
+
+        Vorher wurde der Kopf um den bereits skalierten Mittelpunkt
+        skaliert (Scherung): er sass dadurch sichtbar zu hoch und der Hut
+        steckte im Kopf.
+        """
+        from scripts.classic_render import BodyScale, _create_r15_part
+        from scripts.r15_blocky_rig import load_r15_blocky_rig
+
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        part = load_r15_blocky_rig()["Head"]
+        scale = BodyScale(width=1.0, height=0.9, depth=1.0, head=0.95)
+        material = bpy.data.materials.new("TestMat")
+        objects = []
+        obj = _create_r15_part(part, material, bpy.context.scene, objects, scale)
+        base = np.asarray(part.vertices, dtype=np.float64)
+        scaled = np.asarray([tuple(v.co) for v in obj.data.vertices], dtype=np.float64)
+        base_center = (base.min(axis=0) + base.max(axis=0)) / 2.0
+        scaled_center = (scaled.min(axis=0) + scaled.max(axis=0)) / 2.0
+        # Die Position folgt der Body-Hoehe ...
+        self.assertAlmostEqual(scaled_center[2], base_center[2] * scale.height, places=5)
+        # ... die Groesse wird uniform mit HeadScale skaliert.
+        base_height = base[:, 2].max() - base[:, 2].min()
+        scaled_height = scaled[:, 2].max() - scaled[:, 2].min()
+        self.assertAlmostEqual(scaled_height, base_height * scale.head, places=5)
 
     def test_blocky_part_vertices_are_scaled_per_axis(self):
         from scripts.classic_render import BodyScale, _create_r15_part
