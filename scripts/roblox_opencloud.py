@@ -49,6 +49,12 @@ ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmas
 # https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg
 KORBLOX_RIGHT_LEG_ASSET_ID = 139607718
 
+# Asset-Typen der klassischen Bein-Pakete (Asset-Typ 30 = Left Leg, 31 = Right Leg).
+LEG_BODY_PART_TYPE_IDS = (30, 31)
+
+# R15-Segment eines klassischen Bein-Pakets, das nur als Oberbein uebernommen wird.
+LEG_UPPER_SEGMENT_NAMES = ("LeftUpperLeg", "RightUpperLeg")
+
 # R6-kompatible starre Accessoire-Typen (Layered Clothing 64..72 wird in R6 bewusst ignoriert)
 RIGID_ACCESSORY_TYPE_IDS = {
     8,   # Hat
@@ -381,8 +387,8 @@ class RobloxOpenCloudClient:
             "emote_slot": _slot(first),
         }
 
-    def load_emote_animation(self, asset_id: int, work_dir: Path) -> EmoteAnimation | None:
-        """Laedt eine Emote-Animation (Asset-Typ Animation/EmoteAnimation) per
+    def load_animation(self, asset_id: int, work_dir: Path) -> EmoteAnimation | None:
+        """Laedt eine Animation (Asset-Typ Animation/EmoteAnimation) per
         Open Cloud Asset Delivery und parst sie aus.
 
         Roblox liefert Emotes in zwei Formaten, beide werden unterstuetzt:
@@ -449,6 +455,25 @@ class RobloxOpenCloudClient:
         )
         return EmoteAnimation(asset_id=asset_id, clip=clip)
 
+    # Bestaetigter Name: der Loader verarbeitet Emotes UND Animationen.
+    load_emote_animation = load_animation
+
+    def load_korblox_leg_segments(self, work_dir: Path) -> dict[str, BodyPartSpec]:
+        """Laedt die R15-Segmente des Korblox Deathspeaker Right Leg.
+
+        Das Asset (139607718) liefert zwar die Segmente Oberbein, Unterbein
+        und Fuss, aber nur das Oberbein ist ein eigenes Stueck: Unterbein und
+        Fuss sind die mechanisch aus dem klassischen R6-Bein abgeleiteten
+        Kopien (der Fuss ist ein schwarzer Klotz). Deshalb wird - wie beim
+        GFX-Typ HearthandsType, wo das Korblox-Bein ebenfalls nur ein Stueck
+        ist - ausschliesslich das rechte Oberbein uebernommen. Unterbein und
+        Fuss bleiben beim Avatar.
+        """
+        raw = self.fetch_asset_bytes(KORBLOX_RIGHT_LEG_ASSET_ID)
+        roots = parse_rbx_model(raw)
+        return _load_r15_body_segments(
+            self, roots, KORBLOX_RIGHT_LEG_ASSET_ID, 31, ("RightUpperLeg",), work_dir
+        )
 
     def load_korblox_leg(self, work_dir: Path) -> dict[str, Any]:
         """Laedt das Korblox Deathspeaker Right Leg (Asset-ID 139607718) per
@@ -931,6 +956,32 @@ def _load_r15_body_segments(
         visit(root)
 
     chosen = [node for _, node in candidates.values()]
+
+    # Roblox' Konvertierung klassischer R6-Bein-Pakete: Aus einem einzigen
+    # R6-Bein werden die drei R15-Segmente Oberbein, Unterbein und Fuss
+    # abgeleitet. Der Fuss ist dabei nur ein schwarzer Klotz und das
+    # Unterbein eine mechanische Ableitung desselben klassischen Beins.
+    # Roblox markiert solche Teile mit "AvatarPartScaleType" und legt ihre
+    # Rig-Attachments in R6-Koordinaten (sie liegen also nicht auf dem
+    # Standard-Rig). Sie werden darum nur mit ihrem Oberbein uebernommen -
+    # Unterbein und Fuss bleiben beim Avatar.
+    if asset_type_id in LEG_BODY_PART_TYPE_IDS and len(chosen) > 1:
+        classic_offset = _rig_alignment_offset(chosen)
+        classic_marker = any(
+            node.find_first_child("AvatarPartScaleType") is not None for node in chosen
+        )
+        in_r6_space = any(abs(value) > 0.05 for value in classic_offset)
+        if classic_marker and in_r6_space:
+            upper = [node for node in chosen if node.name in LEG_UPPER_SEGMENT_NAMES]
+            if len(upper) == 1:
+                dropped = sorted(node.name for node in chosen if node is not upper[0])
+                candidates = {upper[0].name: candidates[upper[0].name]}
+                chosen = [upper[0]]
+                print(
+                    f"[body_part] Asset {asset_id}: klassisches R6-Bein - nur das Oberbein "
+                    f"({upper[0].name}) wird uebernommen; {', '.join(dropped)} bleiben beim Avatar."
+                )
+
     align_offset = _rig_alignment_offset(chosen)
     if any(abs(v) > 1e-6 for v in align_offset):
         print(

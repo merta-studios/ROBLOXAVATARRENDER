@@ -16,6 +16,66 @@ ersetzt (inklusive Classic-Shirt/-Hose/-T-Shirt und Face-Decal, die über
 `scripts/r15_clothing.py` als Texturen mit neu berechneten UVs aufgebracht
 werden).
 
+Der Blocky-Rig ist dabei **glänzend** wie ein Roblox-Avatar: Seine Polygone
+werden mit `use_smooth = True` erzeugt (flat shading hätte ihn matt und
+plastisch wirken lassen), das Material nutzt dieselben Glanz-Parameter wie
+der HearthandsType (Rauheit 0.13, Specular 0.55, Klarlack 0.32/0.06).
+
+## Größen-Werte des Avatars (Body-Scales)
+
+Roblox skaliert die Körperteile eines Avatars über vier Werte, die die
+öffentliche Avatar-API im Feld `scales` liefert (1.0 = Standard):
+
+* `width`, `height`, `depth` – `BodyWidthScale`, `BodyHeightScale` und
+  `BodyDepthScale`. Sie multiplizieren **jede** Dimension des jeweiligen
+  Körperteils (ein breiterer Avatar wird in X *und* Z breiter).
+* `head` – `HeadScale`. Der Kopf wird **uniform** skaliert, nicht pro Achse.
+
+Das ist Roblox' dokumentiertes Verhalten („R15 Character Scaling“, devforum
+30642) und die Rthro-Scaling-Spezifikation (devforum 199611):
+
+```lua
+if bodyPart.Name == "Head" then
+    return scaleBodyType * headScale
+else
+    return scaleBodyType * Vector3.new(bodyWidth, bodyHeight, bodyDepth)
+end
+```
+
+Der Renderer setzt das so um (`BodyScale` in `scripts/classic_render.py`):
+
+* Die Vertices der Körperteile werden pro Achse skaliert, der Kopf uniform
+  um seinen Mittelpunkt.
+* Die Positionen der Teile (ihre `CFrame`s im Rig-Space) und die Gelenke der
+  Pose werden mit denselben Werten skaliert, damit die Pose auch bei einem
+  skalierten Avatar an den richtigen Stellen sitzt.
+* Accessoires erben die Skalierung ihres Körperteils; Accessoires am Kopf
+  (Hut, Haar, Gesicht) werden wie der Kopf uniform skaliert.
+* Der Abstand zum Boden wächst mit der Höhe (`2 * height`).
+
+## Korblox & Headless
+
+Beide Optionen kennt der ClassicType jetzt genauso wie der HearthandsType
+(`korblox`, `headless` in `ClassicType/configs.toml`):
+
+* **`korblox = true`** – das rechte Oberbein wird durch das **Korblox
+  Deathspeaker Right Leg** (Asset 139607718) ersetzt. Das Asset liefert zwar
+  die Segmente Oberbein, Unterbein und Fuß, aber nur das Oberbein ist ein
+  eigenes Stück: Unterbein und Fuß sind die mechanisch aus dem klassischen
+  R6-Bein abgeleiteten Kopien (der Fuß ist ein schwarzer Klotz). Deshalb wird
+  – wie beim HearthandsType, wo das Korblox-Bein ebenfalls nur ein Stück ist –
+  ausschließlich das Oberbein übernommen; Unterbein und Fuß bleiben beim
+  Avatar.
+* **`headless = true`** – der Kopf wird ausgeblendet und die
+  Gesicht-Accessoires (Asset-Typ 42, z. B. Brillen oder Masken) ebenfalls.
+  Haare, Hüte und Hals-Accessoires bleiben sichtbar.
+
+Dasselbe gilt für ein **ausgerüstetes** klassisches Bein-Paket: Erkennt der
+Loader ein aus R6 konvertiertes Bein (die Teile tragen `AvatarPartScaleType`
+und ihre Rig-Attachments liegen in R6-Koordinaten), übernimmt er nur das
+Oberbein. Echte R15-Pakete (z. B. „Headless Horseman Left Leg“, 134082507)
+behalten alle drei Segmente.
+
 ## Körperteile aus dem Inventar (Asset-Typen 17, 27–31)
 
 Inventory-Körperteile (z. B. „Roblox 2.0 Torso“) werden als echte Meshes mit
@@ -105,10 +165,22 @@ ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
 
 ## Emote & Pose
 
-`pose = "Emote"` (Emote über `emote_asset_id`) und `pose = "Equipped"` (die am
+`pose = "Emote"` (Emote über `emote_asset_id`), `pose = "Animation"`
+(Animation über `animation_asset_id`) und `pose = "Equipped"` (die am
 Spieleravatar ausgerüstete Pose) setzen den Avatar in die Pose der
 geladenen Animation. `scripts/rbx_animation.py` liest die Animation,
 `scripts/classic_render.py` rechnet sie auf das R15-Rig der Classic-Szene um.
+
+| `pose` | Quelle | ID aus der Konfiguration |
+| --- | --- | --- |
+| `"None"` | normales Stehen | – |
+| `"Equipped"` | vom Spieler ausgerüstete Profilpose (Slot 1) | – |
+| `"Emote"` | Emote (Asset-Typ 61 „EmoteAnimation“) | `emote_asset_id` |
+| `"Animation"` | Animation (Asset-Typ 53 „Animation“, z. B. „Ninja Run“, 658830056) | `animation_asset_id` |
+
+`"Animation"` und `"Emote"` laufen über denselben Loader (`load_animation()`):
+Beide Asset-Arten enthalten eine Keyframe-Sequenz, und der eingefrorene
+Moment ist – wie in der Roblox-Vorschau – die **erste Keyframe**.
 
 ### Die beiden Animationsformate von Roblox
 

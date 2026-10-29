@@ -166,6 +166,7 @@ class RenderConfigTests(unittest.TestCase):
                 "material": "matt",
                 "pose": "Emote",
                 "emote_asset_id": 12345678,
+                "animation_asset_id": 658830056,
                 "rotation_deg": 45,
                 "abstand_oben": 10,
                 "abstand_unten": -10,
@@ -176,6 +177,7 @@ class RenderConfigTests(unittest.TestCase):
         self.assertEqual(config["material"], "Matt")
         self.assertEqual(config["pose"], "Emote")
         self.assertEqual(config["emote_asset_id"], 12345678)
+        self.assertEqual(config["animation_asset_id"], 658830056)
         self.assertEqual(config["rotation_deg"], 45.0)
         self.assertEqual(config["abstand_oben"], 10.0)
         self.assertEqual(config["abstand_unten"], -10.0)
@@ -193,9 +195,9 @@ class RenderConfigTests(unittest.TestCase):
                 self.calls.append(("equipped", user_id))
                 return None
 
-            def load_emote_animation(self, asset_id, work_dir):
+            def load_animation(self, asset_id, work_dir):
                 self.calls.append(("load", asset_id))
-                return None
+                return SimpleNamespace(asset_id=asset_id)
 
         with tempfile.TemporaryDirectory() as pose_tmp:
             work_dir = Path(pose_tmp)
@@ -221,13 +223,40 @@ class RenderConfigTests(unittest.TestCase):
                 )
             self.assertEqual(emote_client.calls, [("load", 123)])
 
+            # pose = "Animation" laedt die Animation ueber animation_asset_id.
+            animation_client = SpyClient()
+            with patch("builtins.print"):
+                pose, emote, asset_id = resolve_classic_pose(
+                    config={"pose": "Animation", "animation_asset_id": 658830056},
+                    bundle=bundle,
+                    client=animation_client,
+                    work_dir=work_dir,
+                )
+            self.assertEqual(pose, "Animation")
+            self.assertIsNotNone(emote)
+            self.assertEqual(animation_client.calls, [("load", 658830056)])
+            self.assertEqual(asset_id, 658830056)
+
+            # Ohne animation_asset_id bleibt die Pose "None".
+            empty_client = SpyClient()
+            with patch("builtins.print"):
+                pose, emote, _asset_id = resolve_classic_pose(
+                    config={"pose": "Animation", "animation_asset_id": 0},
+                    bundle=bundle,
+                    client=empty_client,
+                    work_dir=work_dir,
+                )
+            self.assertEqual(pose, "None")
+            self.assertEqual(empty_client.calls, [])
+
         # Die echte ClassicType/configs.toml darf die ClassicType-Optionen nicht
         # versehentlich als TOML-Unterschluessel von [outline] enthalten.
         import tomllib
 
         repo_root = Path(__file__).resolve().parents[1]
         raw = tomllib.loads((repo_root / "ClassicType/configs.toml").read_text(encoding="utf-8"))
-        for key in ("pose", "emote_asset_id", "rotation_deg", "abstand_oben", "abstand_unten"):
+        for key in ("pose", "emote_asset_id", "animation_asset_id", "rotation_deg",
+                    "abstand_oben", "abstand_unten", "korblox", "headless"):
             with self.subTest(key=key):
                 self.assertIn(key, raw)
                 self.assertNotIn(key, raw.get("outline", {}))

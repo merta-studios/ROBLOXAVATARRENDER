@@ -31,10 +31,31 @@ material = "Glossy"
 #   "Emote"     - Pose aus einem Emote (Animation) nach emote_asset_id,
 #                 eingefroren am Moment, der auch in der Emote-Vorschau zu sehen ist
 #                 (wird per Roblox Open Cloud API abgerufen, nicht geraten)
+#   "Animation" - Pose aus einer Animation nach animation_asset_id, z. B.
+#                 "Ninja Run" (658830056). Auch hier gilt die erste Keyframe
+#                 der Animation als Vorschau-Moment.
 pose = "Emote"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
 emote_asset_id = 132679422049257
+
+# Asset-ID der Animation, nur relevant wenn pose = "Animation" steht.
+# Beispiel: "Ninja Run" (Asset-Typ "Animation") aus dem Ninja Animation Pack.
+animation_asset_id = 658830056
+
+# Korblox Deathspeaker Right Leg (Asset-ID 139607718, offiziell von Roblox:
+# https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg).
+# Das echte Korblox-Bundle kostet 17.000 Robux und ist für viele nicht
+# bezahlbar, ist aber ein beliebter GFX-Look. Wenn true, wird das rechte
+# Oberbein im Render durch das Korblox-Bein ersetzt (mit dessen eigenen
+# Materialien/Texturen) - wie beim GFX-Typ HearthandsType, wo das Korblox-Bein
+# ebenfalls nur ein Stück ist. Unterbein und Fuß bleiben beim Avatar.
+korblox = false
+
+# Headless Horseman-Look: Wenn true, wird der Kopf unsichtbar gemacht und
+# auch die Gesicht-Accessoires (z. B. Brillen oder Masken) ausgeblendet.
+# Haare, Hüte und Hals-Accessoires bleiben sichtbar.
+headless = false
 
 # Drehung des Avatars in Grad um die vertikale Achse:
 # 0 = schaut zur Mitte, 45 = schräg nach rechts, -45 = schräg nach links.
