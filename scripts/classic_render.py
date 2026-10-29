@@ -668,9 +668,14 @@ def _create_r15_part(
         if part.name == "Head":
             coords = np.asarray(vertices, dtype=np.float64)
             center = (coords.min(axis=0) + coords.max(axis=0)) / 2.0
-            center = np.array([center[0], center[1], center[2] * scale.height])
+            # Der Kopf folgt der Body-Hoehe (der Hals sitzt bei hoeherem
+            # Koerper auch hoeher), seine Groesse wird uniform mit
+            # HeadScale skaliert. Wichtig: der Groessen-Versatz wird vom
+            # urspruenglichen Mittelpunkt aus gemessen - sonst entsteht eine
+            # Scherung und der Kopf sitzt sichtbar zu hoch.
+            new_center = np.array([center[0], center[1], center[2] * scale.height])
             vertices = [
-                tuple(center + (np.asarray(v, dtype=np.float64) - center) * scale.head)
+                tuple(new_center + (np.asarray(v, dtype=np.float64) - center) * scale.head)
                 for v in vertices
             ]
         else:
@@ -851,7 +856,11 @@ def _diag_accessory_boxes(accessory_parents: list[tuple[Any, str]] | None) -> di
     return out
 
 
-def _emote_joint_rig(bone_name: str, scale: "BodyScale | None" = None) -> tuple[float, float, float]:
+def _emote_joint_rig(
+    bone_name: str,
+    scale: "BodyScale | None" = None,
+    overrides: dict[str, tuple[float, float, float]] | None = None,
+) -> tuple[float, float, float]:
     """Gelenkposition eines Bones im Roblox-Rig-Space.
 
     Root im Ursprung, Fusssohlen bei y = -2. Fuer R6-Begriffe (alte Emotes)
@@ -860,14 +869,24 @@ def _emote_joint_rig(bone_name: str, scale: "BodyScale | None" = None) -> tuple[
     Die Position wird mit den Groessen-Werten des Avatars skaliert, damit die
     Gelenke des Rigs exakt dort liegen, wo Roblox sie nach dem Setzen von
     BodyWidthScale/BodyHeightScale/BodyDepthScale erwartet.
+
+    ``overrides`` ersetzt die Standard-Position durch die Position, die das
+    Koerperteil-Asset selbst mitbringt: Roblox baut das Rig eines
+    Koerperteils aus dessen eigenen "RigAttachment"-Positionen neu auf
+    (``Humanoid:BuildRigFromAttachments()``), die Gelenke der Pose liegen
+    also dort, wo das Asset sie hinlegt.
     """
     attachment = R15_BONE_PIVOT_ATTACHMENTS.get(bone_name)
     if attachment is None:
         attachment = R6_BONE_PIVOT_ATTACHMENTS.get(bone_name)
-    if attachment is None:
-        pos = R15_ROOT_JOINT
-    else:
-        pos = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment) or R15_ROOT_JOINT
+    pos: tuple[float, float, float] | None = None
+    if overrides:
+        pos = overrides.get(bone_name)
+    if pos is None:
+        if attachment is None:
+            pos = R15_ROOT_JOINT
+        else:
+            pos = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment) or R15_ROOT_JOINT
     if scale is None:
         return (float(pos[0]), float(pos[1]), float(pos[2]))
     scaled = scale.rig_point(pos)
@@ -888,8 +907,32 @@ def _rig_to_bl_point(
     return np.array([-x, z, y + offset], dtype=np.float64)
 
 
+def _rig_pivot_overrides(
+    body_parts: dict[str, Any] | None,
+) -> dict[str, tuple[float, float, float]]:
+    """Gelenkpositionen aus den "RigAttachment"-Positionen der Assets.
+
+    Roblox baut das Rig aus den Attachments des Koerperteils neu auf, die
+    Gelenke liegen also bei den Positionen des Assets. Segmente ohne eigene
+    Attachments (blocky rig) behalten die Standard-Positionen des Rigs.
+    """
+    out: dict[str, tuple[float, float, float]] = {}
+    for name, spec in (body_parts or {}).items():
+        attachment = R15_BONE_PIVOT_ATTACHMENTS.get(name)
+        if not attachment:
+            continue
+        position = (getattr(spec, "rig_attachments", None) or {}).get(attachment)
+        if position is None:
+            continue
+        out[name] = (float(position[0]), float(position[1]), float(position[2]))
+    return out
+
+
 def _emote_world_transforms(
-    clip: Any, time: float, scale: "BodyScale | None" = None
+    clip: Any,
+    time: float,
+    scale: "BodyScale | None" = None,
+    overrides: dict[str, tuple[float, float, float]] | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Vorwaertsberechnung der Emote-Pose ueber die Rig-Hierarchie.
 
@@ -912,7 +955,7 @@ def _emote_world_transforms(
     world_joint: dict[str, np.ndarray] = {}
     for bone in clip.bone_order():
         r_local = np.asarray(local.get(bone, identity), dtype=np.float64)
-        joint = np.asarray(_emote_joint_rig(bone, scale), dtype=np.float64)
+        joint = np.asarray(_emote_joint_rig(bone, scale, overrides), dtype=np.float64)
         # Eltern-Bone: bevorzugt aus der Animation, sonst aus dem R15-Rig.
         parent = parents.get(bone)
         if parent is None or parent not in world_rot:
@@ -921,7 +964,9 @@ def _emote_world_transforms(
             world_rot[bone] = r_local
             world_joint[bone] = joint
             continue
-        parent_joint_rest = np.asarray(_emote_joint_rig(parent, scale), dtype=np.float64)
+        parent_joint_rest = np.asarray(
+            _emote_joint_rig(parent, scale, overrides), dtype=np.float64
+        )
         world_rot[bone] = world_rot[parent] @ r_local
         world_joint[bone] = world_joint[parent] + world_rot[parent] @ (
             joint - parent_joint_rest
@@ -935,6 +980,7 @@ def _apply_emote_to_r15(
     scene: Any,
     accessory_parents: list[tuple[Any, str]] | None = None,
     scale: "BodyScale | None" = None,
+    overrides: dict[str, tuple[float, float, float]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Uebertraegt die Emote-Pose auf das R15-Rig der Classic-Szene.
 
@@ -954,12 +1000,12 @@ def _apply_emote_to_r15(
     if clip is None:
         return {}, {}
     time = clip.preview_time()
-    world_rot, world_joint = _emote_world_transforms(clip, time, scale)
+    world_rot, world_joint = _emote_world_transforms(clip, time, scale, overrides)
 
     bone_empties: dict[str, Any] = {}
     part_empties: dict[str, Any] = {}
     for bone in world_rot:
-        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone, scale), scale)
+        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone, scale, overrides), scale)
         empty = bpy.data.objects.new(f"ClassicR15Bone_{bone}", None)
         scene.collection.objects.link(empty)
         empty.matrix_world = Matrix(_translation_mat4(*pivot_rest.tolist()).tolist())
@@ -986,7 +1032,7 @@ def _apply_emote_to_r15(
         r_bl = T3_RBX_TO_BL @ np.asarray(rot_rbx, dtype=np.float64) @ T3_RBX_TO_BL
         rot4 = np.eye(4, dtype=np.float64)
         rot4[:3, :3] = r_bl
-        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone, scale), scale)
+        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone, scale, overrides), scale)
         pivot_world = _rig_to_bl_point(world_joint[bone], scale)
 
         # Das Gelenk wandert an seine neue Position und dreht sich mit.
@@ -1150,11 +1196,13 @@ def render_classic_scene(
     # TEMPORARY DIAG: Ruhelage aller Koerperteile und Accessoires.
     _diag_rest = _diag_part_boxes(body_objects)
     _diag_acc_rest = _diag_accessory_boxes(accessory_parents)
+    _pivot_overrides = _rig_pivot_overrides(body_parts)
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote", "Animation") and classic_emote is not None:
         bone_empties, _part_empties = _apply_emote_to_r15(
-            classic_emote, body_objects, scene, accessory_parents, body_scale
+            classic_emote, body_objects, scene, accessory_parents, body_scale,
+            _pivot_overrides,
         )
     elif classic_pose not in ("None", "Equipped", "Emote", "Animation"):
         print(f"[classic] Unbekannte Pose {classic_pose!r} - normales Stehen wird verwendet.")
@@ -1166,6 +1214,28 @@ def render_classic_scene(
             "parts_posed": _diag_part_boxes(body_objects),
             "acc_rest": _diag_acc_rest,
             "acc_posed": _diag_accessory_boxes(accessory_parents),
+            "pivot_overrides": {
+                name: [round(float(v), 4) for v in pos]
+                for name, pos in _pivot_overrides.items()
+            },
+            "rig_attachments": {
+                name: {
+                    att: [round(float(v), 4) for v in pos]
+                    for att, pos in (getattr(spec, "rig_attachments", None) or {}).items()
+                }
+                for name, spec in (body_parts or {}).items()
+            },
+            "rig_attachments_raw": {
+                name: {
+                    att: [round(float(v), 4) for v in pos]
+                    for att, pos in (getattr(spec, "rig_attachments_raw", None) or {}).items()
+                }
+                for name, spec in (body_parts or {}).items()
+            },
+            "standard_attachments": {
+                att: [round(float(v), 4) for v in pos]
+                for att, pos in R15_FIXED_ATTACHMENT_POSITIONS.items()
+            },
         }
     )
 
