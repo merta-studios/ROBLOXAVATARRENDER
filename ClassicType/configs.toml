@@ -26,8 +26,11 @@ material = "Glossy"
 
 # Pose des Avatars:
 #   "None"      - normales Stehen (Standard)
-#   "Equipped"  - die am Avatar des Spielers bereits ausgerüstete Pose
-#                 (die auch auf seinem Profil am Avatar angewendet wird)
+#   "Equipped"  - die Profilpose des Users, also die Pose, die Roblox in der
+#                 2D-Vorschau des Profils zeigt: der Avatar in seiner
+#                 Leerlauf-Animation (Asset-Typ 51). Ohne eigenes Idle nutzt
+#                 Roblox seine Standard-Idle "Rthro Idle" (2510235063).
+#                 Das ausgerüstete Emote (Slot 1) ist dafuer NICHT zustaendig.
 #   "Emote"     - Pose aus einem Emote (Animation) nach emote_asset_id,
 #                 eingefroren am Moment, der auch in der Emote-Vorschau zu sehen ist
 #                 (wird per Roblox Open Cloud API abgerufen, nicht geraten)
