@@ -277,6 +277,18 @@ def main() -> int:
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
         # TEMPORAERE DIAGNOSE
         try:
+            if gfx_type == "ClassicType":
+                main_diag = EMOTE_DIAGNOSTICS.pop("emote", None)
+                try:
+                    equipped = client.fetch_equipped_emote(bundle.user_id)
+                    EMOTE_DIAGNOSTICS["equipped"] = equipped
+                    if equipped:
+                        client.load_emote_animation(int(equipped["emote_asset_id"]), work_dir)
+                        EMOTE_DIAGNOSTICS["equipped_emote"] = EMOTE_DIAGNOSTICS.pop("emote", None)
+                except Exception as exc:  # pragma: no cover
+                    EMOTE_DIAGNOSTICS["equipped_error"] = str(exc)[:400]
+                if main_diag is not None:
+                    EMOTE_DIAGNOSTICS["emote"] = main_diag
             embed_diagnostics(output_path, EMOTE_DIAGNOSTICS)
         except Exception as exc:  # pragma: no cover
             print(f"[diag] Diagnose konnte nicht geschrieben werden: {exc}")

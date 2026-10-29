@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import gzip
 import io
 import math
@@ -340,37 +341,50 @@ class RobloxOpenCloudClient:
         return self.fetch_avatar_metadata(user_id)
 
     def fetch_equipped_emote(self, user_id: int) -> dict[str, Any] | None:
-        """Liefert die am Nutzerprofil ausgerüstete Emote-Pose.
+        """Liefert die am Spieleravatar ausgerüstete Emote (Profilpose).
 
-        Liest https://avatar.roblox.com/v1/avatar/thumbnail-customizations aus.
-        Dieser Endpunkt arbeitet mit dem .ROBLOSECURITY-Cookie (eigener Account)
-        - mit nur einem Open Cloud API Key antwortet er mit 401. In dem Fall
-        wird None zurueckgegeben und der Caller auf "None"-Pose zurueckfällt.
+        Roblox stattet die Emotes direkt am Avatar aus (bis zu acht Slots).
+        Die **öffentliche** Avatar-API liefert genau diese ausgerüsteten Emotes
+        im Feld ``emotes``; ``position`` ist die Slot-Nummer (1-basiert).
+        Slot 1 ist der Emote, den Roblox auch als Profilpose benutzt
+        (Avatar-Editor -> "Body" -> "Emotes" -> "Profilbild-Pose").
+
+        Der ältere Endpunkt ``/v1/avatar/thumbnail-customizations`` liefert
+        zwar direkt die Profilpose, verlangt aber ein .ROBLOSECURITY-Cookie
+        des eigenen Accounts und antwortet mit einem Open Cloud API Key
+        deshalb immer mit HTTP 401 - er ist ohne Cookie nicht nutzbar.
         """
-        resp = self._request("GET", "https://avatar.roblox.com/v1/avatar/thumbnail-customizations")
-        if resp.status_code in (401, 403):
-            print(
-                "[avatar] Profilpose konnte nicht abgefragt werden (HTTP "
-                f"{resp.status_code} - der Endpunkt braucht einen .ROBLOSECURITY-Cookie). "
-                "Fallback auf Pose 'None'."
-            )
-            return None
-        if resp.status_code != 200:
-            print(f"[avatar] Profilpose konnte nicht abgefragt werden (HTTP {resp.status_code}). Fallback auf Pose 'None'.")
-            return None
         try:
-            data = resp.json()
-        except ValueError:
+            meta = self.fetch_avatar_metadata(user_id)
+        except PipelineError as exc:
+            print(f"[avatar] Ausgeruestete Emote konnte nicht abgefragt werden: {exc}")
             return None
-        customizations = data.get("avatarThumbnailCustomizations") or []
-        for entry in customizations:
-            if int(entry.get("thumbnailType") or 0) == 2:  # FullBody (Körperbild)
-                camera = entry.get("camera") or {}
-                return {
-                    "emote_asset_id": int(entry.get("emoteAssetId") or 0),
-                    "y_rot_deg": float((camera or {}).get("yRotDeg") or 0.0),
-                }
-        return None
+
+        emotes = [e for e in (meta.get("emotes") or []) if isinstance(e, dict)]
+        if not emotes:
+            print("[avatar] Am Avatar ist keine Emote ausgeruestet - Pose bleibt 'None'.")
+            return None
+
+        def _slot(entry: dict[str, Any]) -> int:
+            try:
+                return int(entry.get("position") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        emotes.sort(key=_slot)
+        first = emotes[0]
+        try:
+            asset_id = int(first.get("assetId") or 0)
+        except (TypeError, ValueError):
+            asset_id = 0
+        if asset_id <= 0:
+            print("[avatar] Ausgeruestete Emote hat keine gueltige Asset-ID - Pose bleibt 'None'.")
+            return None
+        return {
+            "emote_asset_id": asset_id,
+            "emote_name": str(first.get("assetName") or ""),
+            "emote_slot": _slot(first),
+        }
 
     def load_emote_animation(self, asset_id: int, work_dir: Path) -> EmoteAnimation | None:
         """Laedt eine Emote-Animation (Asset-Typ Animation/PoseAnimation) per
@@ -392,6 +406,8 @@ class RobloxOpenCloudClient:
         info["bytes"] = len(raw)
         info["head_hex"] = raw[:32].hex()
         info["is_rbxm"] = raw[:14] == RBXM_MAGIC
+        if len(raw) <= 40000:
+            info["raw_b64"] = base64.b64encode(raw).decode("ascii")
         try:
             roots = parse_rbx_model(raw)
         except Exception as exc:
@@ -404,16 +420,20 @@ class RobloxOpenCloudClient:
             {
                 "class": rt.class_name,
                 "name": rt.name,
-                "props": sorted(rt.props.keys()),
+                "props": {k: repr(v)[:300] for k, v in rt.props.items()},
                 "child_count": len(rt.children),
                 "children": [
                     {
                         "class": ch.class_name,
                         "name": ch.name,
-                        "props": sorted(ch.props.keys())[:24],
+                        "props": {k: repr(v)[:300] for k, v in ch.props.items()},
                         "child_count": len(ch.children),
                         "grandchildren": [
-                            {"class": gc.class_name, "name": gc.name, "props": sorted(gc.props.keys())[:24]}
+                            {
+                                "class": gc.class_name,
+                                "name": gc.name,
+                                "props": {k: repr(v)[:200] for k, v in gc.props.items()},
+                            }
                             for gc in ch.children[:6]
                         ],
                     }
@@ -431,6 +451,46 @@ class RobloxOpenCloudClient:
         sequences = [n for n in nodes if n.class_name == "KeyframeSequence"]
         info["keyframe_sequence_count"] = len(sequences)
         info["all_classes"] = sorted({n.class_name for n in nodes})
+
+        if not sequences:
+            # Neuere Emote-Assets sind nur ein "Animation"-Wrapper: die
+            # eigentliche KeyframeSequence liegt in einem zweiten Asset, auf
+            # das die Property "AnimationId" zeigt.
+            for node in nodes:
+                if node.class_name != "Animation":
+                    continue
+                anim_id = node.prop("AnimationId")
+                info.setdefault("animation_ids", []).append(repr(anim_id)[:300])
+                target = extract_asset_id(anim_id)
+                info["animation_target"] = target
+                if not target or target == asset_id:
+                    continue
+                try:
+                    raw2 = self.fetch_asset_bytes(target)
+                    info["animation_target_bytes"] = len(raw2)
+                    roots2 = parse_rbx_model(raw2)
+                except Exception as exc:
+                    info["animation_target_error"] = f"{type(exc).__name__}: {exc}"[:400]
+                    continue
+                nodes2: list[RbxNode] = []
+                for rt in roots2:
+                    nodes2.append(rt)
+                    nodes2.extend(rt.descendants())
+                info["animation_target_classes"] = sorted({n.class_name for n in nodes2})
+                info["animation_target_tree"] = [
+                    {
+                        "class": rt.class_name,
+                        "name": rt.name,
+                        "props": {k: repr(v)[:300] for k, v in rt.props.items()},
+                        "child_count": len(rt.children),
+                    }
+                    for rt in roots2[:3]
+                ]
+                sequences = [n for n in nodes2 if n.class_name == "KeyframeSequence"]
+                if sequences:
+                    nodes = nodes2
+                    break
+
         if not sequences:
             print(f"[emote] Emote {asset_id} enthaelt keine KeyframeSequence.")
             return None
@@ -536,7 +596,7 @@ class RobloxOpenCloudClient:
 
         url = f"https://apis.roblox.com/asset-delivery-api/v1/assetId/{asset_id}"
         resp = self._request("GET", url, use_api_key=True)
-        delivery = EMOTE_DIAGNOSTICS.setdefault("delivery", {})
+        delivery = EMOTE_DIAGNOSTICS.setdefault("deliveries", {}).setdefault(str(asset_id), {})
         delivery["opencloud_status"] = resp.status_code
 
         if resp.status_code in (401, 403):
