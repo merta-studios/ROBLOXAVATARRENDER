@@ -543,9 +543,11 @@ def _create_r15_part(
     for loop in mesh.loops:
         if loop.index < len(part_uvs):
             uv_layer.data[loop.index].uv = part_uvs[loop.index]
-    if part.name == "Head":
-        for poly in mesh.polygons:
-            poly.use_smooth = True
+    # Glatte Normalen: Roblox zeichnet die Koerperteile mit weichen,
+    # gerundeten Kanten. Ohne sie wirkt der Blocky-Fallback flach und
+    # spiegelungsarm - die Inventar-Meshes werden ebenfalls smooth geshaded.
+    for poly in mesh.polygons:
+        poly.use_smooth = True
     mesh.materials.append(material)
     obj = bpy.data.objects.new(part.name, mesh)
     scene.collection.objects.link(obj)
