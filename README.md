@@ -35,10 +35,15 @@ Der zweite Ordner [`ClassicType/`](./ClassicType/) enthält eine eigene [`config
 
 Weitere ClassicType-Einstellungen:
 
-- **`pose`**: `"None"` (normales Stehen), `"Equipped"` (die am Spieleravatar ausgerüstete Pose, die auch auf seinem Profil angewendet wird) oder `"Emote"` (Pose aus einem Emote nach `emote_asset_id`).
+- **`pose`**: `"None"` (normales Stehen), `"Equipped"` (die am Spieleravatar ausgerüstete Pose, die auch auf seinem Profil angewendet wird), `"Emote"` (Pose aus einem Emote nach `emote_asset_id`) oder `"Animation"` (Pose aus einer Animation nach `animation_asset_id`, z. B. „Ninja Run“, 658830056).
   - `"Equipped"` liest die öffentliche Avatar-API (`avatar.roblox.com`), in der die ausgerüsteten Emotes mit ihrer Slot-Nummer stehen. Slot 1 ist die Emote, die Roblox auch als Profilpose verwendet (der ältere Endpunkt `/v1/avatar/thumbnail-customizations` liefert die Profilpose direkt, verlangt aber ein `.ROBLOSECURITY`-Cookie und ist ohne Account-Login nicht nutzbar).
   - `"Emote"` lädt das Asset über die Open Cloud Asset Delivery API. Viele Emote-Assets sind nur ein `Animation`-Wrapper; dann folgt der Renderer dem `AnimationId` auf das eigentliche Animations-Asset.
+  - `"Animation"` lädt eine Animation (Roblox-Asset-Typ 53, z. B. „Ninja Run“) über denselben Weg wie ein Emote und verwendet ebenfalls die erste Keyframe als Vorschau-Moment.
 - **`emote_asset_id`**: Asset-ID des Emotes, nur relevant bei `pose = "Emote"`. Das System friert den Moment ein, der auch in der Emote-Vorschau zu sehen ist (erste Keyframe der per Open Cloud API geladenen Animation), anstatt zu raten. Beide von Roblox gelieferten Animationsformate werden gelesen: die klassische `KeyframeSequence` (verschachtelter `Pose`-Baum je Keyframe) und die neue `CurveAnimation` (`FloatCurve`-Werte je Bone) – siehe [`ClassicType/README.md`](./ClassicType/README.md#emote--pose).
+- **`animation_asset_id`**: Asset-ID der Animation, nur relevant bei `pose = "Animation"` (z. B. „Ninja Run“, 658830056). Auch hier gilt die erste Keyframe als der Moment, den Roblox in der Vorschau zeigt.
+- **`korblox`** (`true`/`false`): Wenn `true`, wird das rechte Oberbein des R15-Rigs durch das **Korblox Deathspeaker Right Leg** (Asset 139607718) ersetzt – mit den eigenen Materialien/Texturen des Assets. Wie beim HearthandsType ist das Korblox-Bein dabei nur ein Stück: Unterbein und Fuß bleiben beim Avatar.
+- **`headless`** (`true`/`false`): Wenn `true`, wird der Kopf unsichtbar gemacht und auch die Gesicht-Accessoires (Asset-Typ 42, z. B. Brillen oder Masken) ausgeblendet. Haare, Hüte und Hals-Accessoires bleiben sichtbar (Headless-Horseman-Look).
+- **Größen-Werte**: Die Skalierung des Avatars (`width`, `height`, `depth`, `head` aus dem `scales`-Feld der Avatar-API) wird generisch angewendet: alle Körperteile pro Achse, der Kopf uniform, Accessoires entsprechend ihres Körperteils. Details in [`ClassicType/README.md`](./ClassicType/README.md#größen-werte-des-avatars-body-scales).
 - **`rotation_deg`**: Drehung in Grad um die vertikale Achse: `0` = schaut zur Mitte, `45` = schräg nach rechts, `-45` = schräg nach links.
 - **`abstand_oben` / `abstand_unten`**: Abstand vom oberen bzw. unteren Bildrand in Prozent der Avatar-Höhe (Länge zwischen höchstem und tiefstem Punkt des 3D-Modells). `100` = eine komplette Avatar-Höhe Platz vor dem Avatar, `10` = 10 Prozent davon, `-10` = der Avatar rutscht bereits zu 10% in den Rand hinein.
 
@@ -53,7 +58,7 @@ python3 -m py_compile scripts/*.py tests/*.py
 python3 -m unittest discover -s tests -v
 ```
 
-Ohne installiertes `bpy` laufen genau die 26 reinen Python-Tests; die Blender-Regressionstests werden nur in der CI gesammelt. Die Render-Pfade selbst benötigen `bpy==5.0.1` und das GitHub-Secret `ROBLOX_API_KEY`.
+Ohne installiertes `bpy` laufen nur die reinen Python-Tests; die Blender-Regressionstests (Blocky-Rig, Materialien, Größen-Werte, Posen) werden in der CI unter `xvfb` gesammelt. Die Render-Pfade selbst benötigen `bpy==5.0.1` und das GitHub-Secret `ROBLOX_API_KEY`.
 
 ## Auto Merge & Bereinigung
 

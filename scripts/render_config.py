@@ -32,8 +32,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
 GFX_TYPES = ("HearthandsType", "ClassicType")
 
 # ClassicType-Posen: "None" = normales Stehen, "Equipped" = am Spielerprofil
-# ausgerüstete Pose, "Emote" = Pose aus einem Emote (Asset-ID).
-CLASSIC_POSES = ("None", "Equipped", "Emote")
+# ausgerüstete Pose, "Emote" = Pose aus einem Emote (Asset-ID),
+# "Animation" = Pose aus einer Animation (Asset-ID, z. B. "Ninja Run").
+CLASSIC_POSES = ("None", "Equipped", "Emote", "Animation")
 
 
 def read_config(path: Path) -> dict[str, Any]:
@@ -142,6 +143,18 @@ def read_classic_config(path: Path) -> dict[str, Any]:
     if emote_asset_id < 0:
         raise ValueError("'emote_asset_id' darf nicht negativ sein.")
     config["emote_asset_id"] = emote_asset_id
+
+    try:
+        animation_asset_id = int(config.get("animation_asset_id", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("'animation_asset_id' muss eine ganze Zahl sein.") from exc
+    if animation_asset_id < 0:
+        raise ValueError("'animation_asset_id' darf nicht negativ sein.")
+    config["animation_asset_id"] = animation_asset_id
+
+    for bool_key in ("korblox", "headless"):
+        if not isinstance(config[bool_key], bool):
+            raise ValueError(f"'{bool_key}' muss true oder false sein.")
 
     try:
         rotation_deg = float(config.get("rotation_deg", 0))

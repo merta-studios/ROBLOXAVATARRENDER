@@ -120,6 +120,47 @@ class ClassicBodyPartTests(unittest.TestCase):
             parts = _load_r15_body_segments(Client(), roots, 401, 29, ("LeftUpperArm",), Path(tmp))
         self.assertAlmostEqual(parts["LeftUpperArm"].cframe[1], 1.379, places=4)
 
+    def test_classic_r6_leg_asset_contributes_only_its_upper_leg(self):
+        """Ein aus R6 konvertiertes Bein liefert nur das Oberbein.
+
+        Das Korblox Deathspeaker Right Leg (139607718) ist ein solches Paket:
+        seine Teile tragen "AvatarPartScaleType" und liegen in R6-Koordinaten
+        (die Rig-Attachments sitzen 1 Stud zu tief). Unterbein und Fuss sind
+        daraus mechanisch abgeleitet (der Fuss ist ein schwarzer Klotz) und
+        sollen beim Avatar bleiben.
+        """
+        upper = part("RightUpperLeg", 60, 160, cframe_at(0.4812, -1.2418, -0.030))
+        upper.children.append(attachment("RightHipRigAttachment", cframe_at(0.0188, 0.2418, 0.030)))
+        upper.children.append(RbxNode("StringValue", "AvatarPartScaleType", {"Value": "Classic"}))
+        lower = part("RightLowerLeg", 61, 161, cframe_at(0.5877, -2.2097, -0.0708))
+        lower.children.append(RbxNode("StringValue", "AvatarPartScaleType", {"Value": "Classic"}))
+        foot = part("RightFoot", 62, 162, cframe_at(0.5980, -2.8713, -0.011))
+        foot.children.append(RbxNode("StringValue", "AvatarPartScaleType", {"Value": "Classic"}))
+        roots = [RbxNode("Folder", "root", children=[
+            RbxNode("Folder", "R15Fixed", children=[upper, lower, foot]),
+        ])]
+        with tempfile.TemporaryDirectory() as tmp, patch("scripts.roblox_opencloud.parse_rbx_mesh", side_effect=mesh):
+            parts = _load_r15_body_segments(Client(), roots, 139607718, 31,
+                ("RightUpperLeg", "RightLowerLeg", "RightFoot"), Path(tmp))
+        self.assertEqual(set(parts), {"RightUpperLeg"})
+        # Das Oberbein wird auf das Standard-Rig gehoben (Hueft auf y = 0).
+        self.assertAlmostEqual(parts["RightUpperLeg"].cframe[1], -0.2418, places=4)
+
+    def test_properly_aligned_leg_asset_keeps_all_its_segments(self):
+        """Ein echtes R15-Bein-Paket (z. B. Headless Horseman) bleibt vollstaendig."""
+        upper = part("LeftUpperLeg", 63, 163, cframe_at(-0.4471, -0.3160, -0.0169))
+        upper.children.append(attachment("LeftHipRigAttachment", cframe_at(-0.0529, 0.3160, 0.0169)))
+        lower = part("LeftLowerLeg", 64, 164, cframe_at(-0.4831, -1.1116, 0.0499))
+        lower.children.append(attachment("LeftKneeRigAttachment", cframe_at(-0.0169, 0.2896, -0.0499)))
+        foot = part("LeftFoot", 65, 165, cframe_at(-0.5129, -1.6914, -0.1421))
+        roots = [RbxNode("Folder", "root", children=[
+            RbxNode("Folder", "R15Fixed", children=[upper, lower, foot]),
+        ])]
+        with tempfile.TemporaryDirectory() as tmp, patch("scripts.roblox_opencloud.parse_rbx_mesh", side_effect=mesh):
+            parts = _load_r15_body_segments(Client(), roots, 134082507, 30,
+                ("LeftUpperLeg", "LeftLowerLeg", "LeftFoot"), Path(tmp))
+        self.assertEqual(set(parts), {"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"})
+
     def test_classic_package_texture_comes_from_the_character_mesh(self):
         """Klassische Pakete tragen ihre Textur am CharacterMesh, nicht am MeshPart."""
         character = RbxNode("CharacterMesh", "CharacterMesh", {"BaseTextureId": "rbxassetid://777"})

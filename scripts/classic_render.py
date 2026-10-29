@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import functools
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -169,6 +170,81 @@ ASSET_TYPE_TO_PART_NAMES: dict[int, tuple[str, ...]] = {
     30: ("LeftUpperLeg", "LeftLowerLeg", "LeftFoot"),
     31: ("RightUpperLeg", "RightLowerLeg", "RightFoot"),
 }
+
+
+@dataclass(frozen=True)
+class BodyScale:
+    """Die Groessen-Werte eines Avatars (Roblox "Humanoid"-Scales).
+
+    Roblox skaliert die Koerperteile des R15-Rigs in allen drei Dimensionen
+    (``BodyWidthScale``, ``BodyHeightScale``, ``BodyDepthScale``), den Kopf
+    dagegen uniform (``HeadScale``). Das beschreibt Roblox in der
+    Ankuendigung "R15 Character Scaling" (devforum 30642) und in der
+    Rthro-Scaling-Spezifikation (devforum 199611):
+
+        if bodyPart.Name == "Head" then
+            return scaleBodyType * headScale
+        else
+            return scaleBodyType * Vector3.new(bodyWidth, bodyHeight, bodyDepth)
+        end
+
+    Die Werte kommen aus dem Feld ``scales`` der oeffentlichen Avatar-API
+    (Verhaeltnis zum Standard, 1.0 = Standard).
+    """
+
+    width: float = 1.0
+    height: float = 1.0
+    depth: float = 1.0
+    head: float = 1.0
+
+    @classmethod
+    def from_bundle(cls, bundle: Any) -> "BodyScale":
+        raw = getattr(bundle, "scales", {}) or {}
+
+        def _value(key: str, default: float = 1.0) -> float:
+            try:
+                value = float(raw.get(key, default))
+            except (TypeError, ValueError):
+                return default
+            if value <= 0.0:
+                return default
+            if value > 3.0:
+                # Aeltere API-Antworten liefern Prozentwerte (z. B. 90).
+                value /= 100.0
+            return min(max(value, 0.1), 3.0)
+
+        return cls(
+            width=_value("width"),
+            height=_value("height"),
+            depth=_value("depth"),
+            head=_value("head"),
+        )
+
+    @property
+    def is_identity(self) -> bool:
+        return (
+            self.width == 1.0
+            and self.height == 1.0
+            and self.depth == 1.0
+            and self.head == 1.0
+        )
+
+    def rig_point(self, point: tuple[float, float, float] | np.ndarray) -> np.ndarray:
+        """Punkt im Roblox-Rig-Space skalieren (x=Breite, y=Hoehe, z=Tiefe)."""
+        x, y, z = (float(v) for v in point)
+        return np.array([x * self.width, y * self.height, z * self.depth], dtype=np.float64)
+
+    def local_scale(self) -> tuple[float, float, float]:
+        """Skalierung der Mesh-Vertices im lokalen Part-Raum (x, y, z)."""
+        return (self.width, self.height, self.depth)
+
+    def bl_scale(self) -> tuple[float, float, float]:
+        """Skalierung der Blocky-Rig-Vertices im Blender-Raum (x, y, z).
+
+        Der Blocky-Rig liegt bereits im Blender-Raum (Z nach oben, x nach
+        hinten); deshalb tauschen Hoehe und Tiefe ihre Plaetze.
+        """
+        return (self.width, self.depth, self.height)
 
 
 def _require_bpy() -> None:
@@ -454,30 +530,71 @@ def _add_clothing_uv(mesh: Any, part_name: str, color_key: str) -> None:
         layer.data[loop.index].uv = uvs[loop.index]
 
 
-def _body_part_matrix_bl(cframe: tuple[float, ...]) -> Matrix:
+def _body_part_matrix_bl(cframe: tuple[float, ...], scale: "BodyScale | None" = None) -> Matrix:
     """Transformiert ein Roblox-CFrame (Character-Space) in den Blender-Raum.
 
     Roblox-Character-Space: HumanoidRootPart im Ursprung, Fusssohlen bei
     y = -2. Blender: Z nach oben, Fusssohlen bei z = 0, also liegt der
     Avatar-Root bei z = +2. Die Basisumkehrung ``T_RBX_TO_BL`` ist
     involutorisch und wird daher auf beiden Seiten benutzt.
+
+    Bei skalierten Avataren wird die Position des Teils mit den
+    Body-Scales multipliziert (die Groesse selbst steckt im Mesh) und der
+    Boden-Abstand entsprechend auf 2 * Height gesetzt.
     """
     mat_rbx = _cframe_to_mat4(cframe)
+    if scale is not None:
+        position = scale.rig_point((mat_rbx[0, 3], mat_rbx[1, 3], mat_rbx[2, 3]))
+        mat_rbx[0, 3], mat_rbx[1, 3], mat_rbx[2, 3] = position
     mat_bl = T_RBX_TO_BL @ mat_rbx @ T_RBX_TO_BL
-    mat_bl[2, 3] += 2.0
+    mat_bl[2, 3] += 2.0 * (scale.height if scale is not None else 1.0)
     return Matrix(mat_bl.tolist())
+
+
+def _scale_mesh_vertices(mesh: Any, factors: tuple[float, float, float]) -> None:
+    """Skaliert alle Vertices eines Meshes (lokaler Part-Raum)."""
+    if all(abs(f - 1.0) < 1e-9 for f in factors):
+        return
+    for vertex in mesh.vertices:
+        vertex.co = (
+            vertex.co.x * factors[0],
+            vertex.co.y * factors[1],
+            vertex.co.z * factors[2],
+        )
+    mesh.update()
+
+
+def _scale_mesh_uniform_about_center(mesh: Any, factor: float) -> None:
+    """Skaliert ein Mesh uniform um seinen eigenen Mittelpunkt (z. B. der Kopf)."""
+    if abs(factor - 1.0) < 1e-9 or not mesh.vertices:
+        return
+    coords = np.asarray([tuple(v.co) for v in mesh.vertices], dtype=np.float64)
+    center = (coords.min(axis=0) + coords.max(axis=0)) / 2.0
+    for vertex in mesh.vertices:
+        co = np.asarray(tuple(vertex.co), dtype=np.float64)
+        vertex.co = tuple(center + (co - center) * factor)
+    mesh.update()
 
 
 def _create_inventory_part(
     part: R15Part, body_part: Any, srgb: tuple[float, float, float],
     finish: str, clothing_path: str | None, scene: Any, render_objects: list[Any],
     classic_texture_path: str | None = None,
+    scale: "BodyScale | None" = None,
 ) -> Any:
     # Der Mesh-Builder konvertiert bereits Roblox -> Blender. Eine zweite
     # Achsentransformation wuerde die Teile auf den Boden kippen.
     mesh = _build_blender_mesh_from_rbx(
         f"{part.name}Mesh", body_part.mesh, body_part.mesh_scale, body_part.mesh_offset
     )
+    if scale is not None:
+        # Roblox skaliert die Koerperteile in allen drei Dimensionen, den
+        # Kopf dagegen uniform (HeadScale). Das Mesh liegt bereits im
+        # Blender-Raum, deshalb werden Hoehe und Tiefe getauscht.
+        if part.name == "Head":
+            _scale_mesh_uniform_about_center(mesh, scale.head)
+        else:
+            _scale_mesh_vertices(mesh, scale.bl_scale())
     _add_clothing_uv(mesh, part.name, part.color_key)
     texture_path = body_part.texture_path
     if not texture_path and classic_texture_path and Path(classic_texture_path).is_file():
@@ -502,7 +619,9 @@ def _create_inventory_part(
     # Das Asset bringt seinen eigenen CFrame mit (Ordner "R15Fixed" des
     # Assets). Genau dort sitzt das Teil am Roblox-Rig; die Positionen wurden
     # beim Laden ueber die Rig-Attachments auf das Standard-Rig ausgerichtet.
-    obj.matrix_world = _body_part_matrix_bl(getattr(body_part, "cframe", IDENTITY_CFRAME))
+    obj.matrix_world = _body_part_matrix_bl(
+        getattr(body_part, "cframe", IDENTITY_CFRAME), scale
+    )
     render_objects.append(obj)
     return obj
 
@@ -533,10 +652,28 @@ def _create_r15_part(
     material: Any,
     scene: Any,
     render_objects: list[Any],
+    scale: "BodyScale | None" = None,
 ) -> Any:
     """Erzeugt ein Mesh aus den offiziellen R15-Blocky-Rig-Daten."""
     mesh = bpy.data.meshes.new(f"{part.name}Mesh")
-    mesh.from_pydata(part.vertices, [], part.faces)
+    vertices = part.vertices
+    if scale is not None:
+        # Die Blocky-Rig-Vertices liegen im Blender-Raum (Z nach oben). Der
+        # Kopf wird - wie bei Roblox - uniform skaliert, der Rest pro Achse.
+        if part.name == "Head":
+            coords = np.asarray(vertices, dtype=np.float64)
+            center = (coords.min(axis=0) + coords.max(axis=0)) / 2.0
+            center = np.array([center[0], center[1], center[2] * scale.height])
+            vertices = [
+                tuple(center + (np.asarray(v, dtype=np.float64) - center) * scale.head)
+                for v in vertices
+            ]
+        else:
+            factors = scale.bl_scale()
+            vertices = [
+                (v[0] * factors[0], v[1] * factors[1], v[2] * factors[2]) for v in vertices
+            ]
+    mesh.from_pydata(vertices, [], part.faces)
     mesh.update()
     uv_layer = mesh.uv_layers.new(name="UVMap")
     part_uvs = compute_part_uvs(part)
@@ -611,7 +748,7 @@ def _accessory_bone(acc: Any) -> str:
     return ATTACHMENT_BONE.get(name, "UpperTorso")
 
 
-def _accessory_matrix_bl(acc: Any) -> Any:
+def _accessory_matrix_bl(acc: Any, scale: "BodyScale | None" = None) -> Any:
     """Berechnet C_rig @ C_adj @ inv(C_acc) und wechselt in Blender-Koordinaten."""
     attachment_name = _effective_attachment_name(acc)
     rig_pos = _r15_attachments_rbx()[attachment_name]
@@ -621,6 +758,11 @@ def _accessory_matrix_bl(acc: Any) -> Any:
         acc_cf = acc.attachment_cframe
     else:
         acc_cf = acc.legacy_attachment_point
+
+    if scale is not None:
+        # Das Attachment liegt auf dem Koerper und wandet daher mit den
+        # Body-Scales mit.
+        rig_pos = tuple(float(v) for v in scale.rig_point(rig_pos))
 
     c_rig = _translation_mat4(*rig_pos)
     c_acc = _cframe_to_mat4(acc_cf)
@@ -632,6 +774,21 @@ def _accessory_matrix_bl(acc: Any) -> Any:
     handle_rbx = c_rig @ c_adj @ c_acc_inv
     handle_bl = T_RBX_TO_BL @ handle_rbx @ T_RBX_TO_BL
     return Matrix(handle_bl.tolist())
+
+
+# Accessoire-Typen, die am Kopf haengen (Hut, Haar, Gesicht). Sie werden
+# wie der Kopf uniform mit dem HeadScale skaliert, alle anderen mit den
+# Body-Scales des Koerpers.
+HEAD_ACCESSORY_TYPE_IDS = {8, 41, 42}
+
+
+def _accessory_scale_factors(acc: Any, scale: "BodyScale | None") -> tuple[float, float, float]:
+    """Skalierungsfaktoren eines Accessoires (Roblox-Raum: x, y, z)."""
+    if scale is None:
+        return (1.0, 1.0, 1.0)
+    if int(getattr(acc, "asset_type_id", 0) or 0) in HEAD_ACCESSORY_TYPE_IDS:
+        return (scale.head, scale.head, scale.head)
+    return scale.local_scale()
 
 
 def _world_bbox(objects: list[Any]) -> tuple[np.ndarray, np.ndarray] | None:
@@ -654,35 +811,45 @@ def _world_bbox(objects: list[Any]) -> tuple[np.ndarray, np.ndarray] | None:
     return (lo, hi) if found else None
 
 
-def _emote_joint_rig(bone_name: str) -> tuple[float, float, float]:
+def _emote_joint_rig(bone_name: str, scale: "BodyScale | None" = None) -> tuple[float, float, float]:
     """Gelenkposition eines Bones im Roblox-Rig-Space.
 
     Root im Ursprung, Fusssohlen bei y = -2. Fuer R6-Begriffe (alte Emotes)
     gilt die entsprechende R15-Position: R6-Schulter = R15-Schulter usw.
+
+    Die Position wird mit den Groessen-Werten des Avatars skaliert, damit die
+    Gelenke des Rigs exakt dort liegen, wo Roblox sie nach dem Setzen von
+    BodyWidthScale/BodyHeightScale/BodyDepthScale erwartet.
     """
     attachment = R15_BONE_PIVOT_ATTACHMENTS.get(bone_name)
     if attachment is None:
         attachment = R6_BONE_PIVOT_ATTACHMENTS.get(bone_name)
     if attachment is None:
-        return R15_ROOT_JOINT
-    pos = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment)
-    if not pos:
-        return R15_ROOT_JOINT
-    return (float(pos[0]), float(pos[1]), float(pos[2]))
+        pos = R15_ROOT_JOINT
+    else:
+        pos = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment) or R15_ROOT_JOINT
+    if scale is None:
+        return (float(pos[0]), float(pos[1]), float(pos[2]))
+    scaled = scale.rig_point(pos)
+    return (float(scaled[0]), float(scaled[1]), float(scaled[2]))
 
 
-def _rig_to_bl_point(point: tuple[float, float, float] | np.ndarray) -> np.ndarray:
-    """Punkt aus dem Roblox-Rig-Space in den Blender-Raum umrechnen.
+def _rig_to_bl_point(
+    point: tuple[float, float, float] | np.ndarray, scale: "BodyScale | None" = None
+) -> np.ndarray:
+    """Punkt aus dem (skalierten) Roblox-Rig-Space in den Blender-Raum umrechnen.
 
     Im Blender-Raum liegt der Avatar-Root bei z = +2 (Fusssohlen bei z = 0)
     und x zeigt nach hinten, daher (x_bl, y_bl, z_bl) = (-x_rbx, z_rbx, y_rbx+2).
+    Bei skalierten Avataren liegt der Root entsprechend hoeher (2 * Height).
     """
     x, y, z = (float(v) for v in point)
-    return np.array([-x, z, y + 2.0], dtype=np.float64)
+    offset = 2.0 * (scale.height if scale is not None else 1.0)
+    return np.array([-x, z, y + offset], dtype=np.float64)
 
 
 def _emote_world_transforms(
-    clip: Any, time: float
+    clip: Any, time: float, scale: "BodyScale | None" = None
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Vorwaertsberechnung der Emote-Pose ueber die Rig-Hierarchie.
 
@@ -701,12 +868,12 @@ def _emote_world_transforms(
     for bone in clip.bone_order():
         r_local = np.asarray(local.get(bone, identity), dtype=np.float64)
         parent = parents.get(bone)
-        joint = np.asarray(_emote_joint_rig(bone), dtype=np.float64)
+        joint = np.asarray(_emote_joint_rig(bone, scale), dtype=np.float64)
         if parent is None or parent not in world_rot:
             world_rot[bone] = r_local
             world_joint[bone] = joint
             continue
-        parent_joint_rest = np.asarray(_emote_joint_rig(parent), dtype=np.float64)
+        parent_joint_rest = np.asarray(_emote_joint_rig(parent, scale), dtype=np.float64)
         world_rot[bone] = world_rot[parent] @ r_local
         world_joint[bone] = world_joint[parent] + world_rot[parent] @ (
             joint - parent_joint_rest
@@ -719,6 +886,7 @@ def _apply_emote_to_r15(
     body_objects: dict[str, Any],
     scene: Any,
     accessory_parents: list[tuple[Any, str]] | None = None,
+    scale: "BodyScale | None" = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Uebertraegt die Emote-Pose auf das R15-Rig der Classic-Szene.
 
@@ -738,12 +906,12 @@ def _apply_emote_to_r15(
     if clip is None:
         return {}, {}
     time = clip.preview_time()
-    world_rot, world_joint = _emote_world_transforms(clip, time)
+    world_rot, world_joint = _emote_world_transforms(clip, time, scale)
 
     bone_empties: dict[str, Any] = {}
     part_empties: dict[str, Any] = {}
     for bone in world_rot:
-        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone))
+        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone, scale), scale)
         empty = bpy.data.objects.new(f"ClassicR15Bone_{bone}", None)
         scene.collection.objects.link(empty)
         empty.matrix_world = Matrix(_translation_mat4(*pivot_rest.tolist()).tolist())
@@ -770,8 +938,8 @@ def _apply_emote_to_r15(
         r_bl = T3_RBX_TO_BL @ np.asarray(rot_rbx, dtype=np.float64) @ T3_RBX_TO_BL
         rot4 = np.eye(4, dtype=np.float64)
         rot4[:3, :3] = r_bl
-        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone))
-        pivot_world = _rig_to_bl_point(world_joint[bone])
+        pivot_rest = _rig_to_bl_point(_emote_joint_rig(bone, scale), scale)
+        pivot_world = _rig_to_bl_point(world_joint[bone], scale)
 
         # Das Gelenk wandert an seine neue Position und dreht sich mit.
         bone_empties[bone].matrix_world = Matrix(
@@ -816,6 +984,8 @@ def render_classic_scene(
     classic_rotation_deg: float = 0.0,
     classic_abstand_oben: float = 0.0,
     classic_abstand_unten: float = 0.0,
+    korblox: bool = False,
+    headless: bool = False,
 ) -> None:
     """Rendert ClassicType in einer eigenen Szene -- ohne R6-Blend-Datei.
 
@@ -839,7 +1009,16 @@ def render_classic_scene(
     official_parts = load_r15_blocky_rig()
     part_textures = getattr(bundle, "r15_part_textures", {}) or {}
     body_parts = getattr(bundle, "body_parts", {}) or {}
-    is_headless = getattr(bundle.head, "kind", "") == "headless"
+    # "headless" erzwingt den Headless-Look (wie beim GFX-Typ HearthandsType).
+    is_headless = getattr(bundle.head, "kind", "") == "headless" or bool(headless)
+    # Groessen-Werte des Avatars (Breite/Hoehe/Tiefe/Kopf).
+    body_scale = BodyScale.from_bundle(bundle)
+    if not body_scale.is_identity:
+        print(
+            "[classic] Avatar-Groessen angewendet: "
+            f"Breite={body_scale.width:.2f} Hoehe={body_scale.height:.2f} "
+            f"Tiefe={body_scale.depth:.2f} Kopf={body_scale.head:.2f}"
+        )
 
     for name, part in official_parts.items():
         if name == "Head" and is_headless:
@@ -852,7 +1031,9 @@ def render_classic_scene(
             material = _solid_material(
                 f"Classic{name}Mat", srgb, material_finish, texture_path=texture_path
             )
-            body_objects[name] = _create_r15_part(part, material, scene, render_objects)
+            body_objects[name] = _create_r15_part(
+                part, material, scene, render_objects, body_scale
+            )
             continue
 
         # Ein ausgerüstetes Koerperteil-Asset bringt seine eigene Textur mit.
@@ -864,6 +1045,7 @@ def render_classic_scene(
         body_objects[name] = _create_inventory_part(
             part, body_part, srgb, material_finish, None, scene, render_objects,
             classic_texture_path=part_textures.get(name),
+            scale=body_scale,
         )
 
     # 2. Geladene Accessoires als echte Meshes an ihren Attachment-Positionen.
@@ -872,11 +1054,20 @@ def render_classic_scene(
         mdata = getattr(acc, "mesh", None)
         if mdata is None or not getattr(mdata, "positions", None):
             continue
+        if headless and int(getattr(acc, "asset_type_id", 0) or 0) == 42:
+            # Headless-Look: Gesicht-Accessoires (Brillen, Masken) entfallen;
+            # Haare, Hueete und Hals-Accessoires bleiben sichtbar.
+            continue
+        # Accessoires am Kopf (Hut, Haar, Gesicht) werden wie der Kopf
+        # uniform skaliert, alle anderen mit den Body-Scales.
+        size_factors = _accessory_scale_factors(acc, body_scale)
         eff_scale = tuple(
-            float(acc.mesh_scale[i]) * float(acc.meta_scale[i]) for i in range(3)
+            float(acc.mesh_scale[i]) * float(acc.meta_scale[i]) * size_factors[i]
+            for i in range(3)
         )
         eff_offset = tuple(
-            float(acc.mesh_offset[i]) * float(acc.meta_scale[i]) for i in range(3)
+            float(acc.mesh_offset[i]) * float(acc.meta_scale[i]) * size_factors[i]
+            for i in range(3)
         )
         base = tuple(max(0.0, min(1.0, float(c))) for c in acc.base_color)
         tint = tuple(max(0.0, min(1.0, float(c))) for c in acc.tint_color)
@@ -896,17 +1087,17 @@ def render_classic_scene(
             continue
         obj = bpy.data.objects.new(f"ClassicAccessory_{acc.asset_id}_{idx}", mesh)
         scene.collection.objects.link(obj)
-        obj.matrix_world = _accessory_matrix_bl(acc)
+        obj.matrix_world = _accessory_matrix_bl(acc, body_scale)
         render_objects.append(obj)
         accessory_parents.append((obj, _accessory_bone(acc)))
         accessory_count += 1
 
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
-    if classic_pose in ("Equipped", "Emote") and classic_emote is not None:
+    if classic_pose in ("Equipped", "Emote", "Animation") and classic_emote is not None:
         bone_empties, _part_empties = _apply_emote_to_r15(
-            classic_emote, body_objects, scene, accessory_parents
+            classic_emote, body_objects, scene, accessory_parents, body_scale
         )
-    elif classic_pose not in ("None", "Equipped", "Emote"):
+    elif classic_pose not in ("None", "Equipped", "Emote", "Animation"):
         print(f"[classic] Unbekannte Pose {classic_pose!r} - normales Stehen wird verwendet.")
 
     # 4. Drehung um die vertikale Achse + Abstaende von oben/unten.

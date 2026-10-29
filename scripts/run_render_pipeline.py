@@ -28,6 +28,7 @@ from PIL import Image
 
 from scripts.roblox_opencloud import (
     AvatarBundle,
+    KORBLOX_RIGHT_LEG_ASSET_ID,
     PipelineError,
     _sanitize_secret,
     RobloxOpenCloudClient,
@@ -107,9 +108,10 @@ def resolve_classic_pose(
     """Ermittelt ClassicType-Pose und Emote-Asset -- ohne Blender-Abhaengigkeit.
 
     Bei ``pose = "None"`` werden WEDER ``fetch_equipped_emote`` NOCH
-    ``load_emote_animation`` aufgerufen. Bei ``"Equipped"`` wird die
+    ``load_animation`` aufgerufen. Bei ``"Equipped"`` wird die
     ausgeruestete Profilpose ueber die API ermittelt und anschliessend wie ein
-    normales Emote geladen; bei ``"Emote"`` gilt ``emote_asset_id``.
+    normales Emote geladen; bei ``"Emote"`` gilt ``emote_asset_id``, bei
+    ``"Animation"`` die ``animation_asset_id`` (z. B. "Ninja Run").
     """
     pose = str(config.get("pose", "None"))
     if pose not in CLASSIC_POSES:
@@ -117,6 +119,7 @@ def resolve_classic_pose(
             f"Ungueltige ClassicType-Pose {pose!r}. Erlaubt: {', '.join(CLASSIC_POSES)}."
         )
     emote_asset_id = int(config.get("emote_asset_id", 0) or 0)
+    animation_asset_id = int(config.get("animation_asset_id", 0) or 0)
     classic_emote: Any = None
 
     if pose == "Equipped":
@@ -128,8 +131,27 @@ def resolve_classic_pose(
             print("[pose] Keine ausgeruestete Profilpose gefunden - Pose bleibt 'None'.")
             pose = "None"
 
+    if pose == "Animation":
+        # Eine Animation (Asset-Typ "Animation", z. B. "Ninja Run") wird
+        # genauso geladen wie ein Emote; verwendet wird die erste Keyframe,
+        # also der Moment, den Roblox auch als Vorschau zeigt.
+        if animation_asset_id <= 0:
+            print("[pose] Keine gueltige animation_asset_id - Pose bleibt 'None'.")
+            pose = "None"
+        else:
+            classic_emote = client.load_animation(animation_asset_id, work_dir)
+            if classic_emote is None:
+                print(
+                    f"[pose] Animation {animation_asset_id} konnte nicht geladen werden "
+                    "- Pose bleibt 'None'."
+                )
+                pose = "None"
+            else:
+                emote_asset_id = animation_asset_id
+                print(f"[pose] Animation {animation_asset_id} wird verwendet.")
+
     if pose in ("Equipped", "Emote") and emote_asset_id > 0:
-        classic_emote = client.load_emote_animation(emote_asset_id, work_dir)
+        classic_emote = client.load_animation(emote_asset_id, work_dir)
         if classic_emote is None:
             print(f"[pose] Emote {emote_asset_id} konnte nicht geladen werden - Pose bleibt 'None'.")
             pose = "None"
@@ -161,6 +183,20 @@ def render_classic(
         work_dir=work_dir,
     )
 
+    if bool(config["korblox"]):
+        # Das Korblox Deathspeaker Right Leg ersetzt nur das rechte Oberbein -
+        # wie beim GFX-Typ HearthandsType, wo das Korblox-Bein ebenfalls ein
+        # einziges Stueck ist. Unterbein und Fuss bleiben beim Avatar.
+        korblox_parts = client.load_korblox_leg_segments(work_dir)
+        if korblox_parts:
+            bundle.body_parts.update(korblox_parts)
+            print(
+                f"[korblox] Rechtes Oberbein ersetzt durch Korblox Deathspeaker Right Leg "
+                f"(Asset {KORBLOX_RIGHT_LEG_ASSET_ID}): {', '.join(sorted(korblox_parts))}."
+            )
+        else:
+            print("[korblox] Korblox-Bein lieferte keine Segmente - Original bleibt erhalten.")
+
     render_classic_scene(
         bundle=bundle,
         output_png=output_png,
@@ -174,6 +210,8 @@ def render_classic(
         classic_rotation_deg=float(config.get("rotation_deg", 0)),
         classic_abstand_oben=float(config.get("abstand_oben", 0)),
         classic_abstand_unten=float(config.get("abstand_unten", 0)),
+        korblox=bool(config["korblox"]),
+        headless=bool(config["headless"]),
     )
 
 
@@ -256,24 +294,6 @@ def main() -> int:
                 )
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
-        # TEMPORAERE DIAGNOSE
-        if gfx_type == "ClassicType":
-            try:
-                from scripts._diag_dump import collect
-                payload = collect(client, work_dir)
-                import base64
-                import gzip
-                from PIL import PngImagePlugin
-
-                blob = base64.b64encode(gzip.compress(json.dumps(payload).encode("utf-8"))).decode("ascii")
-                img = Image.open(output_path)
-                img.load()
-                info = PngImagePlugin.PngInfo()
-                info.add_text("rbxdiag", blob)
-                img.save(output_path, format="PNG", pnginfo=info)
-                print(f"[diag] Diagnose-Daten ({len(blob)} Bytes) geschrieben.")
-            except Exception as exc:  # pragma: no cover
-                print(f"[diag] Diagnose konnte nicht geschrieben werden: {exc}")
 
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(
