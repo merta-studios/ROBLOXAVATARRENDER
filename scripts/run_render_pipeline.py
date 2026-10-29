@@ -325,6 +325,10 @@ def main() -> int:
                 for pattern in (
                     "bodypart_*.png", "mesh_*.mesh", "r15_*.png", "classic_clothing_*.png",
                     "r6_body_texture*.png",
+                    # Kopf- und Accessoire-Texturen: ohne sie laesst sich die
+                    # UV-Konvention eines Meshes nicht offline gegen seine
+                    # eigene Textur pruefen.
+                    "acc_*.png", "head_tex_*.png", "head_custom_composite*.png",
                 ):
                     for item in sorted(work_dir.glob(pattern)):
                         # GFX-Typ im Dateinamen: beide Typen rendern in dasselbe
