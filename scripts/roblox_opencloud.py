@@ -1115,6 +1115,18 @@ def _log_segment_diagnostics(
         f"[body_part]   diag {name}: part=({part_cframe[0]:.3f}, {part_cframe[1]:.3f}, "
         f"{part_cframe[2]:.3f}) textur_datei={Path(texture_path).name if texture_path else '-'}"
     )
+    # Die Rotation des CFrames ist entscheidend: sie dreht das Mesh um die
+    # Position des Parts herum. Ohne sie ist nicht erkennbar, ob ein Segment
+    # gedreht im Asset liegt.
+    rot_rows = []
+    for row in range(3):
+        rot_rows.append(
+            ", ".join(f"{part_cframe[3 + row * 3 + col]:.3f}" for col in range(3))
+        )
+    print(
+        f"[body_part]   diag {name}: rotation=[{' | '.join(rot_rows)}] "
+        f"versatz=({align_offset[0]:.3f}, {align_offset[1]:.3f}, {align_offset[2]:.3f})"
+    )
 
 
 def _load_r15_body_segments(

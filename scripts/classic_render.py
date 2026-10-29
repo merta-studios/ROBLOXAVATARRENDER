@@ -847,6 +847,25 @@ def _rig_to_bl_point(
     return np.array([-x, z, y + offset], dtype=np.float64)
 
 
+def _mat4_to_np(mat: Any) -> np.ndarray:
+    """Mathutils-Matrix als numpy-Array (Zeilen x Spalten)."""
+    return np.array(
+        [[float(mat[row][col]) for col in range(4)] for row in range(4)],
+        dtype=np.float64,
+    )
+
+
+def _fmt_vec(vec: Any) -> str:
+    return f"({vec[0]:+.3f}, {vec[1]:+.3f}, {vec[2]:+.3f})"
+
+
+def _fmt_rot(mat: Any) -> str:
+    rows = []
+    for row in range(3):
+        rows.append(", ".join(f"{float(mat[row][col]):+.2f}" for col in range(3)))
+    return " | ".join(rows)
+
+
 def _rig_pivot_overrides(
     body_parts: dict[str, Any] | None,
 ) -> dict[str, tuple[float, float, float]]:
@@ -1136,6 +1155,13 @@ def render_classic_scene(
     # Gelenkpositionen aus den Rig-Attachments der Koerperteil-Assets.
     _pivot_overrides = _rig_pivot_overrides(body_parts)
 
+    # Ruhelage der Segmente vor der Pose festhalten. Der Vergleich mit dem
+    # Soll aus dem CFrame zeigt, ob die Abweichung aus der Umrechnung oder
+    # aus der Pose stammt.
+    _rest_matrices = {
+        name: _mat4_to_np(obj.matrix_world) for name, obj in body_objects.items()
+    }
+
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote", "Animation") and classic_emote is not None:
         bone_empties, _part_empties = _apply_emote_to_r15(
@@ -1146,6 +1172,26 @@ def render_classic_scene(
         print(f"[classic] Unbekannte Pose {classic_pose!r} - normales Stehen wird verwendet.")
 
     # 4. Drehung um die vertikale Achse + Abstaende von oben/unten.
+    # Diagnose: Herkunft der Segment-Positionen (vor dem Kamera-Fit).
+    for name, obj in body_objects.items():
+        spec = body_parts.get(name)
+        soll = None
+        if spec is not None:
+            soll = _mat4_to_np(
+                _body_part_matrix_bl(
+                    getattr(spec, "cframe", IDENTITY_CFRAME), body_scale
+                )
+            )[:3, 3]
+        ruhe = _rest_matrices.get(name)
+        final = _mat4_to_np(obj.matrix_world)
+        print(
+            f"[classic] pos {name}: "
+            f"soll={_fmt_vec(soll) if soll is not None else '-'} "
+            f"ruhe={_fmt_vec(ruhe[:3, 3]) if ruhe is not None else '-'} "
+            f"final={_fmt_vec(final[:3, 3])} "
+            f"rot=[{_fmt_rot(final)}]"
+        )
+
     bbox = _world_bbox(render_objects)
     if bbox is None:
         raise RuntimeError("ClassicType: keine renderbare Avatar-Geometrie vorhanden.")
