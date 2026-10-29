@@ -207,14 +207,15 @@ def render_classic(
     )
 
     if bool(config["korblox"]):
-        # Das Korblox Deathspeaker Right Leg ersetzt nur das rechte Oberbein -
-        # wie beim GFX-Typ HearthandsType, wo das Korblox-Bein ebenfalls ein
-        # einziges Stueck ist. Unterbein und Fuss bleiben beim Avatar.
+        # Das Korblox Deathspeaker Right Leg ersetzt das komplette rechte Bein
+        # (Oberbein, Unterbein und Fuss). Alle gelieferten Segmente kommen aus
+        # dem Asset - sonst stehen Unterbein und Fuss als Blocky-Fallback im
+        # Bild, obwohl der Avatar Korblox traegt.
         korblox_parts = client.load_korblox_leg_segments(work_dir)
         if korblox_parts:
             bundle.body_parts.update(korblox_parts)
             print(
-                f"[korblox] Rechtes Oberbein ersetzt durch Korblox Deathspeaker Right Leg "
+                f"[korblox] Rechtes Bein ersetzt durch Korblox Deathspeaker Right Leg "
                 f"(Asset {KORBLOX_RIGHT_LEG_ASSET_ID}): {', '.join(sorted(korblox_parts))}."
             )
         else:

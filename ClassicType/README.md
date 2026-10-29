@@ -61,14 +61,22 @@ Der Renderer setzt das so um (`BodyScale` in `scripts/classic_render.py`):
 Beide Optionen kennt der ClassicType jetzt genauso wie der HearthandsType
 (`korblox`, `headless` in `ClassicType/configs.toml`):
 
-* **`korblox = true`** – das rechte Oberbein wird durch das **Korblox
-  Deathspeaker Right Leg** (Asset 139607718) ersetzt. Das Asset liefert zwar
-  die Segmente Oberbein, Unterbein und Fuß, aber nur das Oberbein ist ein
-  eigenes Stück: Unterbein und Fuß sind die mechanisch aus dem klassischen
-  R6-Bein abgeleiteten Kopien (der Fuß ist ein schwarzer Klotz). Deshalb wird
-  – wie beim HearthandsType, wo das Korblox-Bein ebenfalls nur ein Stück ist –
-  ausschließlich das Oberbein übernommen; Unterbein und Fuß bleiben beim
-  Avatar.
+* **`korblox = true`** – das **komplette rechte Bein** wird durch das
+  **Korblox Deathspeaker Right Leg** (Asset 139607718) ersetzt: Oberbein,
+  Unterbein und Fuß. Alle drei Segmente liegen im Ordner `R15Fixed` auf dem
+  Standard-R15-Skelett (Hüfte 0, Knie −0.822, Fußgelenk −1.748) und sind nur
+  starr nach unten versetzt; der Loader zieht sie über das Hüftgelenk
+  gemeinsam wieder auf das Standard-Rig, sodass die Asset-internen Abstände
+  erhalten bleiben.
+  * **Warum nicht nur das Oberbein?** Das wurde früher gemacht, weil
+    Unterbein und Fuß des Assets für mechanisch aus dem klassischen R6-Bein
+    abgeleitete Kopien gehalten wurden. Ergebnis: Unter dem Korblox-Oberbein
+    standen ein Blocky-Unterbein und ein Blocky-Fuß im Bild, obwohl der
+    Avatar Korblox trägt. Der Roblox-Client verwirft bei einem Bein-Asset
+    kein Segment – er setzt jedes Kind des Rig-Ordners per
+    `ReplaceBodyPartR15` ein.
+  * Beim GFX-Typ HearthandsType ist das anders: Dort ist der Körper R6, das
+    Korblox-Asset ersetzt also genau ein Bein-Stück.
 * **`headless = true`** – der Kopf wird ausgeblendet und die
   Gesicht-Accessoires (Asset-Typ 42, z. B. Brillen oder Masken) ebenfalls.
   Haare, Hüte und Hals-Accessoires bleiben sichtbar. Enthält ein Haar-Asset
@@ -76,13 +84,13 @@ Beide Optionen kennt der ClassicType jetzt genauso wie der HearthandsType
   Teil des Accessoires und damit sichtbar – das entspricht dem Verhalten des
   GFX-Typs HearthandsType.
 
-Die Regel gilt **nur für das Korblox-Asset 139607718** – nicht für jedes
-Bein-Paket. Ein klassisches Bein-Paket aus dem Inventar (z. B. „ROBLOX Boy
+Für **jedes** Bein-Asset gilt dieselbe Regel: Es wird kein Segment
+verworfen. Ein klassisches Bein-Paket aus dem Inventar (z. B. „ROBLOX Boy
 Left Leg“, 376531300) liefert alle drei Segmente (Oberbein, Unterbein, Fuß)
-und wird auch komplett übernommen: Der Roblox-Client setzt jedes Kind des
-Ordners `R15ArtistIntent` per `ReplaceBodyPartR15` in das R15 ein, es wird
-also kein Segment verworfen. Echte R15-Pakete (z. B. „Headless Horseman
-Left Leg“, 134082507) behalten ohnehin alle drei Segmente.
+und wird komplett übernommen – der Roblox-Client setzt jedes Kind des
+Ordners `R15ArtistIntent` per `ReplaceBodyPartR15` in das R15 ein. Echte
+R15-Pakete (z. B. „Headless Horseman Left Leg“, 134082507) behalten ohnehin
+alle drei Segmente.
 
 ## Der Kopf: DynamicHead (Asset-Typ 79)
 

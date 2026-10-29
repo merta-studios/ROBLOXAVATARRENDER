@@ -1064,13 +1064,26 @@ def render_classic_scene(
     body_parts = getattr(bundle, "body_parts", {}) or {}
     # "headless" erzwingt den Headless-Look (wie beim GFX-Typ HearthandsType).
     is_headless = getattr(bundle.head, "kind", "") == "headless" or bool(headless)
-    # "korblox" ersetzt das rechte Oberbein; das Asset selbst wird schon beim
-    # Laden in die Body-Parts des Avatars geschrieben (Pipeline).
-    if korblox and "RightUpperLeg" not in body_parts:
-        print(
-            "[korblox] Kein Korblox-Oberbein geladen - das Bein des Avatars "
-            "bleibt vollstaendig erhalten."
-        )
+    # "korblox" ersetzt das komplette rechte Bein (Oberbein, Unterbein, Fuss);
+    # die Segmente schreibt bereits die Pipeline in die Body-Parts des
+    # Avatars. Fehlt eines davon, greift dort der Blocky-Fallback - das wird
+    # hier sichtbar gemeldet.
+    if korblox:
+        missing = [
+            name
+            for name in ("RightUpperLeg", "RightLowerLeg", "RightFoot")
+            if name not in body_parts
+        ]
+        if len(missing) == 3:
+            print(
+                "[korblox] Kein Korblox-Bein geladen - das Bein des Avatars "
+                "bleibt vollstaendig erhalten."
+            )
+        elif missing:
+            print(
+                f"[korblox] Korblox-Segmente nicht geladen: {', '.join(missing)} - "
+                "dort bleibt der Blocky-Rig des Avatars."
+            )
     # Groessen-Werte des Avatars (Breite/Hoehe/Tiefe/Kopf).
     body_scale = BodyScale.from_bundle(bundle)
     if not body_scale.is_identity:
