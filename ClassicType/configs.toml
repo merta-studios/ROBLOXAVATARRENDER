@@ -31,14 +31,14 @@ material = "Glossy"
 #   "Emote"     - Pose aus einem Emote (Animation) nach emote_asset_id,
 #                 eingefroren am Moment, der auch in der Emote-Vorschau zu sehen ist
 #                 (wird per Roblox Open Cloud API abgerufen, nicht geraten)
-pose = "Equipped"
+pose = "Emote"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
-emote_asset_id = 0
+emote_asset_id = 132679422049257
 
 # Drehung des Avatars in Grad um die vertikale Achse:
 # 0 = schaut zur Mitte, 45 = schräg nach rechts, -45 = schräg nach links.
-rotation_deg = 30
+rotation_deg = 0
 
 # Abstand von oben und unten in Prozent der Avatar-Höhe. Die Avatar-Höhe ist die
 # Länge zwischen dem höchsten und tiefsten Punkt des 3D-Modells.
@@ -46,7 +46,7 @@ rotation_deg = 30
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
 abstand_oben = 5
-abstand_unten = 5
+abstand_unten = -10
 
 # Render-Hinweis: Dieser GFX-Typ wird mit einer eigenen leeren Szene
 # (scripts/classic_render.py) und ohne R6-Blend-Datei gerendert.
