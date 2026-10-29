@@ -64,9 +64,10 @@ jobs:
           # Diagnose: historische Classic-Kleidungs-Assets direkt laden und
           # ihre Templates im Diagnose-Tag veroeffentlichen.
           PROBE_CLOTHING_ASSETS: "10349332990,84753441338053,115182347741"
-          # Diagnose: ein Koerperteil-Asset (Asset-ID:Asset-Typ) ersetzt das
-          # Inventar-Koerperteil dieses Typs - z. B. die Kokosnuss-Nase.
-          PROBE_BODY_PART_ASSETS: "100234186631845:31"
+          # Diagnose: Mesh-Rohdaten (Format + UVs) im Debug-Tag ablegen.
+          # Die Formatversion und der UV-Bereich werden ohnehin protokolliert;
+          # die Rohdaten erlauben zusaetzlich eine Pruefung offline.
+          DEBUG_MESH_DUMP: "1"
         run: |
           set -uo pipefail
 

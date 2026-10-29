@@ -859,6 +859,11 @@ def _report_mesh_uv(
         f"[mesh] {tag}: version={mesh.version} verts={len(mesh.positions)} "
         f"faces={len(mesh.faces)} {uv_info}"
     )
+    # Rohdaten nur auf Anforderung ablegen: die Meshes sind fuer die
+    # Fehlersuche wertvoll, wuerden aber jeden normalen Render unnötig
+    # aufblaehen (die Pipeline kopiert sie als Artefakt mit).
+    if not os.environ.get("DEBUG_MESH_DUMP"):
+        return
     if raw is not None and work_dir is not None and filename:
         try:
             (work_dir / filename).write_bytes(raw)

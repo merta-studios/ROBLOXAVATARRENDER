@@ -589,8 +589,11 @@ class MeshVersionLogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             work_dir = Path(tmp)
             buf = io.StringIO()
-            with redirect_stdout(buf):
-                _report_mesh_uv("test/head 1", mesh, b"version 4.01\n...", work_dir, "mesh_head_1.mesh")
+            with patch.dict("os.environ", {"DEBUG_MESH_DUMP": "1"}):
+                with redirect_stdout(buf):
+                    _report_mesh_uv(
+                        "test/head 1", mesh, b"version 4.01\n...", work_dir, "mesh_head_1.mesh"
+                    )
             log = buf.getvalue()
             self.assertIn("version=4.01", log)
             self.assertIn("u=0.1250..0.5000", log)
@@ -598,6 +601,21 @@ class MeshVersionLogTests(unittest.TestCase):
             written = work_dir / "mesh_head_1.mesh"
             self.assertTrue(written.exists())
             self.assertEqual(written.read_bytes(), b"version 4.01\n...")
+
+    def test_without_the_debug_flag_no_raw_bytes_are_written(self):
+        """Normale Render duerfen das Ausgabeverzeichnis nicht aufblaehen."""
+        import io
+        from contextlib import redirect_stdout
+
+        from scripts.roblox_opencloud import _report_mesh_uv
+
+        mesh = MeshData("4.01", [(0.0, 0.0, 0.0)], [(0.0, 0.0, 1.0)], [(0.0, 0.0)], None, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            with patch.dict("os.environ", {}, clear=True):
+                with redirect_stdout(io.StringIO()):
+                    _report_mesh_uv("test/ohne dump", mesh, b"roh", work_dir, "mesh_x.mesh")
+            self.assertEqual(list(work_dir.iterdir()), [])
 
     def test_report_without_raw_bytes_writes_nothing(self):
         import io
