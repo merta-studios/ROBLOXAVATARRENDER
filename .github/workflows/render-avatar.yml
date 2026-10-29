@@ -217,6 +217,44 @@ jobs:
           path: /tmp/render_out/
           retention-days: 7
 
+      # Roblox-eigene Referenzbilder der Inventar-Assets laden. Sie sind die
+      # einzige verlaessliche Quelle fuer die Textur-Ausrichtung eines Assets:
+      # unser Renderer muss dieselbe Orientierung zeigen wie Roblox selbst.
+      # Nur im Diagnose-Pfad, Fehler sind deshalb unkritisch.
+      - name: Roblox-Referenzbilder laden
+        if: always()
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/ref_out /tmp/debug_out
+          download() {  # $1=asset $2=name
+            asset="$1"; name="$2"; idx=0
+            for url in \
+              "https://thumbnails.roblox.com/v1/assets?assetIds=${asset}&size=420x420&format=Png&isCircular=false" \
+              "https://www.roblox.com/asset-thumbnail/image?assetId=${asset}&width=420&height=420&format=png" ; do
+              idx=$((idx + 1))
+              raw="/tmp/ref_out/raw_${name}_${idx}"
+              curl -fsSL --max-time 25 -o "$raw" "$url" 2>/dev/null || { rm -f "$raw"; continue; }
+              if head -c 1 "$raw" 2>/dev/null | grep -q '{'; then
+                img=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print((d.get('data') or [{}])[0].get('imageUrl') or '')" "$raw" 2>/dev/null || true)
+                rm -f "$raw"
+                [ -n "$img" ] || continue
+                raw="/tmp/ref_out/raw_${name}_${idx}"
+                curl -fsSL --max-time 25 -o "$raw" "$img" 2>/dev/null || { rm -f "$raw"; continue; }
+              fi
+              echo "OK ${name} <- ${url} ($(stat -c%s "$raw") B)"
+              cp -f "$raw" "/tmp/ref_out/ref_${name}.png"
+              cp -f "$raw" "/tmp/debug_out/ref_${name}.png"
+              rm -f "$raw"
+              return 0
+            done
+            echo "FEHLGESCHLAGEN ${name}"
+          }
+          download 100234186631845 coconut-right-leg
+          download 12887272870 hair
+          download 79997997909830 cape
+          download 121657773524520 head-mesh
+          ls -la /tmp/ref_out || true
+
       # Diagnose-Tag mit Logs, Status-JSON und Render-Bildern. Wird bei jedem
       # Lauf gepusht: die CI-Logs selbst sind ueber die GitHub-API nicht
       # abrufbar, ueber diesen Tag aber auswertbar.
