@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "gfx_type": "ClassicType",
+  "username": "MertaStudios",
+  "display_name": "Merta",
+  "user_id": 8593053805,
+  "accessories_count": 3,
+  "hidden_body_parts": [
+    "RightFoot",
+    "RightLowerLeg"
+  ],
+  "scales": {
+    "height": 1.0,
+    "width": 1.0,
+    "head": 1.0,
+    "depth": 1.0,
+    "proportion": 0.0,
+    "bodyType": 0.0
+  },
+  "player_avatar_type": null,
+  "output_png": "/tmp/render_out/avatar-ClassicType.png"
+}

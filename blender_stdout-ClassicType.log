@@ -1,0 +1,185 @@
+[image] 13576957664: RGBA (585, 559) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[image] 126040928562725: RGBA (585, 559) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[image] 144080495: RGBA (128, 128) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[face] 128x128 RGBA (Alpha 0..255) Kopf-Hautfarbe=(211, 167, 131)
+[classic clothing] 15 R15-Teiltexturen erzeugt.
+[mesh] head/SpecialMesh 134079402: version=1.00 verts=144 faces=48 u=0.0000..1.0000 v=0.0000..1.0000
+[body_part] Asset 27112025: Einhaengepunkt ist das Gelenk RootRigAttachment an LowerTorso.
+[body_part] Asset 27112025 (Typ 27): Segmente LowerTorso, UpperTorso.
+[body_part]   UpperTorso: Part (0.000, 1.112, -0.060) | WaistRigAttachment @ (0.000, 0.400, 0.000) Zielversatz (0.000, 0.000, 0.000); NeckRigAttachment @ (0.000, 2.000, 0.000) Zielversatz (0.000, 0.000, 0.000); LeftShoulderRigAttachment @ (-1.000, 1.763, 0.000) Zielversatz (0.000, -0.000, 0.000); RightShoulderRigAttachment @ (1.000, 1.763, 0.000) Zielversatz (0.000, -0.000, 0.000); LeftCollarAttachment @ (-1.000, 2.000, -0.000) Zielversatz (-0.000, -0.000, 0.000); RightCollarAttachment @ (1.000, 2.000, -0.000) Zielversatz (0.000, -0.000, 0.000); NeckAttachment @ (0.000, 2.000, -0.000) Zielversatz (-0.000, -0.000, 0.000); BodyBackAttachment @ (0.000, 1.000, 0.500) Zielversatz (0.000, -0.000, 0.000); BodyFrontAttachment @ (0.000, 1.000, -0.500) Zielversatz (0.000, -0.000, 0.000)
+[body_part]   LowerTorso: Part (0.000, 0.278, -0.048) | RootRigAttachment @ (0.000, 0.000, 0.000) Zielversatz (0.000, 0.000, 0.000); WaistRigAttachment @ (0.000, 0.400, 0.000) Zielversatz (0.000, -0.000, 0.000); LeftHipRigAttachment @ (-0.500, 0.000, 0.000) Zielversatz (0.000, 0.000, 0.000); RightHipRigAttachment @ (0.500, 0.000, 0.000) Zielversatz (0.000, 0.000, 0.000); WaistCenterAttachment @ (-0.000, 0.000, 0.000) Zielversatz (0.000, -0.000, 0.000); WaistFrontAttachment @ (-0.000, 0.000, -0.500) Zielversatz (0.000, -0.000, 0.000); WaistBackAttachment @ (-0.000, 0.000, 0.500) Zielversatz (0.000, -0.000, -0.000)
+[mesh] koerperteil 27112025/UpperTorso mesh 1660648364: version=2.00 verts=195 faces=274 u=0.0058..0.9944 v=0.3745..0.9615
+[body_part] Texturquelle UpperTorso: keine
+[body_part] UpperTorso von Asset 27112025 hat keine eigene Textur - es wird die klassische Koerpertextur verwendet.
+[body_part]   diag UpperTorso: ordner=r15fixed mesh=1660648364 version=2.00 verts=195 faces=274
+[body_part]   diag UpperTorso: bbox=min(-0.999, -0.919, -0.555) max(0.999, 0.919, 0.555) size=(1.9974559545516968, 1.837510585784912, 1.1106884479522705) initial=(1.9974559545516968, 1.837510585784912, 1.1106884479522705) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag UpperTorso: uv=u 0.006..0.994 v 0.375..0.962 (0,0: 0/195) textur=None alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag UpperTorso: part=(0.000, 1.112, -0.060) textur_datei=-
+[body_part]   diag UpperTorso: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 0.000, 0.000)
+[mesh] koerperteil 27112025/LowerTorso mesh 1660648469: version=2.00 verts=117 faces=158 u=0.0073..0.9944 v=0.0231..0.3745
+[body_part] Texturquelle LowerTorso: keine
+[body_part] LowerTorso von Asset 27112025 hat keine eigene Textur - es wird die klassische Koerpertextur verwendet.
+[body_part]   diag LowerTorso: ordner=r15fixed mesh=1660648469 version=2.00 verts=117 faces=158
+[body_part]   diag LowerTorso: bbox=min(-0.826, -0.250, -0.499) max(0.826, 0.250, 0.499) size=(1.6519598960876465, 0.5001040697097778, 0.9984074234962463) initial=(1.6519598960876465, 0.5001040697097778, 0.9984074234962463) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag LowerTorso: uv=u 0.007..0.994 v 0.023..0.375 (0,0: 0/117) textur=None alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag LowerTorso: part=(0.000, 0.278, -0.048) textur_datei=-
+[body_part]   diag LowerTorso: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 0.000, 0.000)
+[body_part] Asset 27112052: Einhaengepunkt ist das Gelenk LeftShoulderRigAttachment an LeftUpperArm.
+[body_part] Asset 27112052 (Typ 29): Segmente LeftHand, LeftLowerArm, LeftUpperArm.
+[body_part]   LeftUpperArm: Part (-1.290, 1.379, 0.024) | LeftShoulderRigAttachment @ (-1.000, 1.763, 0.000) Zielversatz (0.000, -0.000, 0.000); LeftElbowRigAttachment @ (-1.500, 1.035, 0.000) Zielversatz (0.000, 0.000, 0.000); LeftShoulderAttachment @ (-1.500, 1.953, -0.000) Zielversatz (0.000, -0.000, 0.000)
+[body_part]   LeftLowerArm: Part (-1.439, 0.651, 0.000) | LeftElbowRigAttachment @ (-1.500, 1.035, 0.000) Zielversatz (0.000, 0.000, 0.000); LeftWristRigAttachment @ (-1.500, 0.275, 0.000) Zielversatz (0.000, -0.000, 0.000)
+[body_part]   LeftHand: Part (-1.485, 0.153, 0.006) | LeftWristRigAttachment @ (-1.500, 0.275, 0.000) Zielversatz (0.000, -0.000, 0.000); LeftGripAttachment @ (-1.500, 0.000, -0.000) Zielversatz (0.000, -0.000, 0.000)
+[mesh] koerperteil 27112052/LeftUpperArm mesh 1660648319: version=2.00 verts=111 faces=140 u=0.0097..0.9785 v=0.5413..0.9919
+[body_part] Texturquelle LeftUpperArm: keine
+[body_part] LeftUpperArm von Asset 27112052 hat keine eigene Textur - es wird die klassische Koerpertextur verwendet.
+[body_part]   diag LeftUpperArm: ordner=r15fixed mesh=1660648319 version=2.00 verts=111 faces=140
+[body_part]   diag LeftUpperArm: bbox=min(-0.332, -0.553, -0.406) max(0.332, 0.553, 0.406) size=(0.6641272306442261, 1.0686529874801636, 0.8128907680511475) initial=(0.6641272306442261, 1.1057754755020142, 0.8128907680511475) scale=(1.0000, 0.9664, 1.0000)
+[body_part]   diag LeftUpperArm: uv=u 0.010..0.978 v 0.541..0.992 (0,0: 0/111) textur=None alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag LeftUpperArm: part=(-1.290, 1.379, 0.024) textur_datei=-
+[body_part]   diag LeftUpperArm: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, -0.000, 0.000)
+[mesh] koerperteil 27112052/LeftLowerArm mesh 1660648303: version=2.00 verts=87 faces=116 u=0.0098..0.9785 v=0.2484..0.5413
+[body_part] Texturquelle LeftLowerArm: keine
+[body_part] LeftLowerArm von Asset 27112052 hat keine eigene Textur - es wird die klassische Koerpertextur verwendet.
+[body_part]   diag LeftLowerArm: ordner=r15fixed mesh=1660648303 version=2.00 verts=87 faces=116
+[body_part]   diag LeftLowerArm: bbox=min(-0.407, -0.455, -0.431) max(0.407, 0.455, 0.431) size=(0.8137837648391724, 0.9094315767288208, 0.8621159791946411) initial=(0.8137837648391724, 0.9094315767288208, 0.8621159791946411) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag LeftLowerArm: uv=u 0.010..0.978 v 0.248..0.541 (0,0: 0/87) textur=None alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag LeftLowerArm: part=(-1.439, 0.651, 0.000) textur_datei=-
+[body_part]   diag LeftLowerArm: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, -0.000, 0.000)
+[mesh] koerperteil 27112052/LeftHand mesh 1660648264: version=2.00 verts=134 faces=134 u=0.4143..0.5455 v=0.0088..0.1590
+[body_part] Texturquelle LeftHand: keine
+[body_part] LeftHand von Asset 27112052 hat keine eigene Textur - es wird die klassische Koerpertextur verwendet.
+[body_part]   diag LeftHand: ordner=r15fixed mesh=1660648264 version=2.00 verts=134 faces=134
+[body_part]   diag LeftHand: bbox=min(-0.381, -0.469, -0.374) max(0.381, 0.469, 0.374) size=(0.7627726793289185, 0.9388239979743958, 0.7475496530532837) initial=(0.7627726793289185, 0.9388239979743958, 0.7475496530532837) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag LeftHand: uv=u 0.414..0.546 v 0.009..0.159 (0,0: 0/134) textur=None alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag LeftHand: part=(-1.485, 0.153, 0.006) textur_datei=-
+[body_part]   diag LeftHand: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, -0.000, 0.000)
+[body_part] Asset 134082507: Einhaengepunkt ist das Gelenk LeftHipRigAttachment an LeftUpperLeg.
+[body_part] Asset 134082507 (Typ 30): Segmente LeftFoot, LeftLowerLeg, LeftUpperLeg.
+[body_part]   LeftFoot: Part (-0.513, -1.691, -0.142) | LeftAnkleRigAttachment @ (-0.500, -1.748, 0.000) Zielversatz (0.000, 0.000, 0.000); LeftFootAttachment @ (-0.500, -2.000, 0.000) Zielversatz (-0.000, -0.000, -0.000)
+[body_part]   LeftLowerLeg: Part (-0.483, -1.112, 0.050) | LeftKneeRigAttachment @ (-0.500, -0.822, 0.000) Zielversatz (0.000, 0.000, 0.000); LeftAnkleRigAttachment @ (-0.500, -1.748, 0.000) Zielversatz (0.000, 0.000, 0.000)
+[body_part]   LeftUpperLeg: Part (-0.447, -0.316, -0.017) | LeftHipRigAttachment @ (-0.500, 0.000, 0.000) Zielversatz (0.000, 0.000, 0.000); LeftKneeRigAttachment @ (-0.500, -0.822, 0.000) Zielversatz (0.000, 0.000, 0.000)
+[mesh] koerperteil 134082507/LeftFoot mesh 548055359: version=2.00 verts=480 faces=222 u=0.0105..0.9770 v=0.0100..0.2249
+[body_part] Texturquelle LeftFoot: TextureID 548057406
+[image] 548057406: RGBA (264, 284) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[body_part]   diag LeftFoot: ordner=r15fixed mesh=548055359 version=2.00 verts=480 faces=222
+[body_part]   diag LeftFoot: bbox=min(-0.364, -0.284, -0.648) max(0.364, 0.284, 0.648) size=(0.7270439863204956, 0.5678553581237793, 1.2969348430633545) initial=(0.7270439863204956, 0.5678553581237793, 1.2969348430633545) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag LeftFoot: uv=u 0.010..0.977 v 0.010..0.225 (0,0: 0/480) textur=548057406 alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag LeftFoot: part=(-0.513, -1.691, -0.142) textur_datei=bodypart_134082507_LeftFoot_548057406.png
+[body_part]   diag LeftFoot: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 0.000, 0.000)
+[mesh] koerperteil 134082507/LeftLowerLeg mesh 548055362: version=2.00 verts=506 faces=238 u=0.0730..0.9711 v=0.2408..0.5394
+[body_part] Texturquelle LeftLowerLeg: TextureID 548057406
+[image] 548057406: RGBA (264, 284) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[body_part]   diag LeftLowerLeg: ordner=r15fixed mesh=548055362 version=2.00 verts=506 faces=238
+[body_part]   diag LeftLowerLeg: bbox=min(-0.415, -0.519, -0.463) max(0.415, 0.519, 0.463) size=(0.8300829529762268, 1.0376451015472412, 0.9252371788024902) initial=(0.8300829529762268, 1.0376451015472412, 0.9252371788024902) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag LeftLowerLeg: uv=u 0.073..0.971 v 0.241..0.539 (0,0: 0/506) textur=548057406 alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag LeftLowerLeg: part=(-0.483, -1.112, 0.050) textur_datei=bodypart_134082507_LeftLowerLeg_548057406.png
+[body_part]   diag LeftLowerLeg: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 0.000, 0.000)
+[mesh] koerperteil 134082507/LeftUpperLeg mesh 548055368: version=2.00 verts=540 faces=254 u=0.0101..0.9941 v=0.5472..0.9925
+[body_part] Texturquelle LeftUpperLeg: TextureID 548057406
+[image] 548057406: RGBA (264, 284) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[body_part]   diag LeftUpperLeg: ordner=r15fixed mesh=548055368 version=2.00 verts=540 faces=254
+[body_part]   diag LeftUpperLeg: bbox=min(-0.408, -0.513, -0.408) max(0.408, 0.513, 0.408) size=(0.8153179883956909, 1.0267248153686523, 0.815911054611206) initial=(0.8153179883956909, 1.0267248153686523, 0.815911054611206) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag LeftUpperLeg: uv=u 0.010..0.994 v 0.547..0.992 (0,0: 0/540) textur=548057406 alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag LeftUpperLeg: part=(-0.447, -0.316, -0.017) textur_datei=bodypart_134082507_LeftUpperLeg_548057406.png
+[body_part]   diag LeftUpperLeg: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 0.000, 0.000)
+[body_part] Asset 139607625: Einhaengepunkt ist das Gelenk RightShoulderRigAttachment an RightUpperArm.
+[body_part] Asset 139607625: Rig-Versatz zurueck auf das Standard-Rig (0.000, 1.000, 0.000).
+[body_part] Asset 139607625 (Typ 28): Segmente RightHand, RightLowerArm, RightUpperArm.
+[body_part]   RightUpperArm: Part (1.336, 1.133, 0.007) | RightShoulderRigAttachment @ (1.000, 0.763, 0.000) Zielversatz (0.000, 1.000, 0.000); RightElbowRigAttachment @ (1.500, 0.035, 0.000) Zielversatz (0.000, 1.000, 0.000); RightShoulderAttachment @ (1.500, 0.953, 0.000) Zielversatz (0.000, 1.000, 0.000)
+[body_part]   RightLowerArm: Part (1.600, -0.200, -0.019) | RightElbowRigAttachment @ (1.500, 0.035, 0.000) Zielversatz (0.000, 1.000, 0.000); RightWristRigAttachment @ (1.500, -0.725, 0.000) Zielversatz (0.000, 1.000, 0.000)
+[body_part]   RightHand: Part (1.519, -0.984, -0.079) | RightWristRigAttachment @ (1.500, -0.725, 0.000) Zielversatz (0.000, 1.000, 0.000); RightGripAttachment @ (1.500, -1.000, 0.000) Zielversatz (0.000, 1.000, 0.000)
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[mesh] koerperteil 139607625/RightUpperArm mesh 9598310064: version=2.00 verts=661 faces=926 u=0.0087..0.9611 v=0.5546..0.9971
+[body_part] Texturquelle RightUpperArm: TextureID 553599730
+[image] 553599730: RGBA (264, 284) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[body_part]   diag RightUpperArm: ordner=r15fixed mesh=9598310064 version=2.00 verts=661 faces=926
+[body_part]   diag RightUpperArm: bbox=min(-0.614, -1.311, -0.633) max(0.614, 1.311, 0.633) size=(1.2280089855194092, 2.6215500831604004, 1.2654060125350952) initial=(1.2280089855194092, 2.6215500831604004, 1.2654060125350952) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag RightUpperArm: uv=u 0.009..0.961 v 0.555..0.997 (0,0: 0/661) textur=553599730 alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag RightUpperArm: part=(1.336, 2.133, 0.007) textur_datei=bodypart_139607625_RightUpperArm_553599730.png
+[body_part]   diag RightUpperArm: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 1.000, 0.000)
+[mesh] koerperteil 139607625/RightLowerArm mesh 9598310056: version=2.00 verts=119 faces=122 u=0.0435..0.9914 v=0.2698..0.5623
+[body_part] Texturquelle RightLowerArm: TextureID 553599730
+[image] 553599730: RGBA (264, 284) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[body_part]   diag RightLowerArm: ordner=r15fixed mesh=9598310056 version=2.00 verts=119 faces=122
+[body_part]   diag RightLowerArm: bbox=min(-0.514, -0.486, -0.520) max(0.514, 0.486, 0.520) size=(1.0280799865722656, 0.9719200134277344, 1.0396299362182617) initial=(1.0280799865722656, 0.9719200134277344, 1.0396299362182617) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag RightLowerArm: uv=u 0.044..0.991 v 0.270..0.562 (0,0: 0/119) textur=553599730 alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag RightLowerArm: part=(1.600, 0.800, -0.019) textur_datei=bodypart_139607625_RightLowerArm_553599730.png
+[body_part]   diag RightLowerArm: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 1.000, 0.000)
+[mesh] koerperteil 139607625/RightHand mesh 9598310059: version=2.00 verts=350 faces=462 u=0.0128..0.9929 v=0.0067..0.2707
+[body_part] Texturquelle RightHand: TextureID 553599730
+[image] 553599730: RGBA (264, 284) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[body_part]   diag RightHand: ordner=r15fixed mesh=9598310059 version=2.00 verts=350 faces=462
+[body_part]   diag RightHand: bbox=min(-0.465, -0.757, -0.446) max(0.465, 0.757, 0.446) size=(0.9297101497650146, 1.5142792463302612, 0.8916239738464355) initial=(0.9297101497650146, 1.5142792463302612, 0.8916239738464355) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag RightHand: uv=u 0.013..0.993 v 0.007..0.271 (0,0: 0/350) textur=553599730 alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag RightHand: part=(1.519, 0.016, -0.079) textur_datei=bodypart_139607625_RightHand_553599730.png
+[body_part]   diag RightHand: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(0.000, 1.000, 0.000)
+[body_part] Asset 139607718: Korblox-Bein - nur der Oberbein-Stumpf (RightUpperLeg) ist sichtbar; RightFoot, RightLowerLeg entfallen ersatzlos.
+[body_part] Asset 139607718: Einhaengepunkt ist das Gelenk RightHipRigAttachment an RightUpperLeg.
+[body_part] Asset 139607718: Rig-Versatz zurueck auf das Standard-Rig (-0.000, 1.000, 0.000).01:01.337  render           | Saved: '/tmp/rbx_gfx_f32d6hrx/classic_avatar_rgba.png'
+
+[body_part] Asset 139607718 (Typ 31): Segmente RightUpperLeg.
+[body_part]   RightUpperLeg: Part (0.481, -1.242, -0.030) | RightHipRigAttachment @ (0.500, -1.000, 0.000) Zielversatz (-0.000, 1.000, 0.000); RightKneeRigAttachment @ (0.500, -1.822, 0.000) Zielversatz (-0.000, 1.000, 0.000)
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[body_part]   AvatarPartScaleType = 'Classic'
+[mesh] koerperteil 139607718/RightUpperLeg mesh 9598310133: version=2.00 verts=150 faces=216 u=0.0101..0.7850 v=0.3709..0.7546
+[body_part] Texturquelle RightUpperLeg: TextureID 902843398
+[image] 902843398: RGBA (264, 284) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[body_part]   diag RightUpperLeg: ordner=r15fixed mesh=9598310133 version=2.00 verts=150 faces=216
+[body_part]   diag RightUpperLeg: bbox=min(-0.157, -0.431, -0.195) max(0.157, 0.431, 0.195) size=(0.3142320215702057, 0.8622000217437744, 0.39055001735687256) initial=(0.3142320215702057, 0.8622000217437744, 0.39055001735687256) scale=(1.0000, 1.0000, 1.0000)
+[body_part]   diag RightUpperLeg: uv=u 0.010..0.785 v 0.371..0.755 (0,0: 0/150) textur=902843398 alpha_mode=transparency tint=(1.0, 1.0, 1.0)
+[body_part]   diag RightUpperLeg: part=(0.481, -0.242, -0.030) textur_datei=bodypart_139607718_RightUpperLeg_902843398.png
+[body_part]   diag RightUpperLeg: rotation=[1.000, 0.000, 0.000 | 0.000, 1.000, 0.000 | 0.000, 0.000, 1.000] versatz=(-0.000, 1.000, 0.000)
+[body_part] Asset 139607718 entfernt ersatzlos: RightFoot, RightLowerLeg.
+[mesh] accessoire/SpecialMesh 72574684946317 (Bricksmith Badge) mesh 110536326812594: version=7.00 verts=1076 faces=464 u=0.0270..0.9811 v=0.0302..0.9779
+[image] 129650790247991: RGB (1024, 1024) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[mesh] accessoire/SpecialMesh 73553031478451 (Green) mesh 113642578378179: version=4.01 verts=4058 faces=2068 u=0.0053..0.9885 v=0.0105..0.9954
+[image] 135362538867002: RGBA (1024, 1024) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[mesh] accessoire/SpecialMesh 126241427519956 (White Void Crown) mesh 86707811326762: version=4.01 verts=1955 faces=1090 u=0.0015..0.9867 v=0.0015..0.9985
+[image] 96103072039491: RGB (1024, 1024) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[pose] Profilpose: ausgeruestetes Idle 92979925036969.
+[emote] Emote 92979925036969: CurveAnimation geladen, 16 Bones, 60 Zeitpunkte, Vorschau-Moment t=0.000s.
+[classic] Ersatzlos entfernte Segmente (kein Blocky-Fallback): RightFoot, RightLowerLeg.
+[classic] Emote-Pose aus CurveAnimation auf 16 Bones angewendet (Vorschau-Moment t=0.000s).
+[classic] pos LeftFoot: soll=(+0.513, -0.142, +0.309) ruhe=(+0.513, -0.142, +0.309) final=(+0.513, -0.142, +0.309) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, -0.00 | +0.00, +0.00, +1.00]
+[classic] pos LeftLowerLeg: soll=(+0.483, +0.050, +0.888) ruhe=(+0.483, +0.050, +0.888) final=(+0.483, +0.050, +0.888) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, -0.00 | +0.00, +0.00, +1.00]
+[classic] pos LeftUpperLeg: soll=(+0.447, -0.017, +1.684) ruhe=(+0.447, -0.017, +1.684) final=(+0.447, -0.017, +1.684) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, -0.00 | +0.00, +0.00, +1.00]
+[classic] pos RightUpperLeg: soll=(-0.481, -0.030, +1.758) ruhe=(-0.481, -0.030, +1.758) final=(-0.481, -0.030, +1.758) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, -0.00 | +0.00, +0.00, +1.00]
+[classic] pos RightHand: soll=(-1.519, -0.079, +2.016) ruhe=(-1.519, -0.079, +2.016) final=(-1.519, -0.079, +2.016) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, -0.00, +1.00]
+[classic] pos RightLowerArm: soll=(-1.600, -0.019, +2.800) ruhe=(-1.600, -0.019, +2.800) final=(-1.600, -0.019, +2.800) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, -0.00, +1.00]
+[classic] pos RightUpperArm: soll=(-1.336, +0.007, +4.133) ruhe=(-1.336, +0.007, +4.133) final=(-1.336, +0.007, +4.133) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, -0.00, +1.00]
+[classic] pos LeftHand: soll=(+1.485, +0.006, +2.153) ruhe=(+1.485, +0.006, +2.153) final=(+1.485, +0.006, +2.153) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, -0.00, +1.00]
+[classic] pos LeftLowerArm: soll=(+1.439, +0.000, +2.651) ruhe=(+1.439, +0.000, +2.651) final=(+1.439, +0.000, +2.651) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, -0.00, +1.00]
+[classic] pos LeftUpperArm: soll=(+1.290, +0.024, +3.379) ruhe=(+1.290, +0.024, +3.379) final=(+1.290, +0.024, +3.379) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, -0.00, +1.00]
+[classic] pos UpperTorso: soll=(-0.000, -0.060, +3.112) ruhe=(-0.000, -0.060, +3.112) final=(-0.000, -0.060, +3.112) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, +0.00, +1.00]
+[classic] pos LowerTorso: soll=(-0.000, -0.048, +2.278) ruhe=(-0.000, -0.048, +2.278) final=(-0.000, -0.048, +2.278) rot=[+1.00, +0.00, +0.00 | +0.00, +1.00, +0.00 | +0.00, +0.00, +1.00]
+[classic] 15 Objekte (3 Accessoires), Hoehe=6.673 -> 3.636, Drehung=0.0 deg, Rand oben=0.182 (5.0%), Rand unten=0.182 (5.0%) Welt-Einheiten.
+[classic]   LeftFoot               x[+0.03,+0.42] y[-0.43,+0.28] z[+1.54,+1.85] tex=bodypart_134082507_LeftFoot_548057406.png
+[classic]   LeftLowerLeg           x[-0.02,+0.43] y[-0.22,+0.28] z[+1.73,+2.30] tex=bodypart_134082507_LeftLowerLeg_548057406.png
+[classic]   LeftUpperLeg           x[-0.03,+0.41] y[-0.23,+0.21] z[+2.17,+2.73] tex=bodypart_134082507_LeftUpperLeg_548057406.png
+[classic]   RightUpperLeg          x[-0.40,-0.23] y[-0.12,+0.09] z[+2.25,+2.72] tex=bodypart_139607718_RightUpperLeg_902843398.png
+[classic]   RightHand              x[-1.14,-0.63] y[-0.29,+0.20] z[+2.22,+3.04] tex=bodypart_139607625_RightHand_553599730.png
+[classic]   RightLowerArm          x[-1.21,-0.65] y[-0.29,+0.27] z[+2.79,+3.32] tex=bodypart_139607625_RightLowerArm_553599730.png
+[classic]   RightUpperArm          x[-1.12,-0.45] y[-0.34,+0.35] z[+3.07,+4.50] tex=bodypart_139607625_RightUpperArm_553599730.png
+[classic]   LeftHand               x[+0.54,+0.96] y[-0.20,+0.21] z[+2.45,+2.96] tex=r15_LeftHand.png
+[classic]   LeftLowerArm           x[+0.51,+0.95] y[-0.23,+0.24] z[+2.73,+3.22] tex=r15_LeftLowerArm.png
+[classic]   LeftUpperArm           x[+0.47,+0.83] y[-0.21,+0.23] z[+3.08,+3.66] tex=r15_LeftUpperArm.png
+[classic]   UpperTorso             x[-0.60,+0.49] y[-0.34,+0.27] z[+2.72,+3.73] tex=r15_UpperTorso.png
+[classic]   LowerTorso             x[-0.51,+0.39] y[-0.30,+0.25] z[+2.63,+2.91] tex=r15_LowerTorso.png
+[classic]   ClassicAccessory_72574684946317_0 x[+0.09,+0.37] y[-0.34,-0.27] z[+3.35,+3.63] tex=acc_72574684946317_tex_129650790247991.png
+[classic]   ClassicAccessory_73553031478451_1 x[-0.87,+0.75] y[-0.19,+0.19] z[+4.08,+5.18] tex=acc_73553031478451_tex_135362538867002.png
+[classic]   ClassicAccessory_126241427519956_2 x[-0.53,+0.42] y[-0.48,+0.48] z[+4.23,+4.48] tex=acc_126241427519956_tex_96103072039491.png
+[image] 10349332978: RGBA (585, 559) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[probe] Kleidungs-Asset 10349332990: (585, 559) -> ClassicType_probe_clothing_10349332990.png
+[image] 84753441338053: RGBA (585, 559) transparency=None raw_format=b'\x89PNG\r\n\x1a\n'
+[probe] Kleidungs-Asset 84753441338053: (585, 559) -> ClassicType_probe_clothing_84753441338053.png
+[probe] Kleidungs-Asset 115182347741 nicht ladbar: Asset 115182347741 konnte über Open Cloud Asset Delivery nicht aufgelöst werden (HTTP 200).
+[profil] Roblox-Profilbild geladen: 59299 Bytes
