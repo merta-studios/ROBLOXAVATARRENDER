@@ -61,22 +61,29 @@ Der Renderer setzt das so um (`BodyScale` in `scripts/classic_render.py`):
 Beide Optionen kennt der ClassicType jetzt genauso wie der HearthandsType
 (`korblox`, `headless` in `ClassicType/configs.toml`):
 
-* **`korblox = true`** – das **komplette rechte Bein** wird durch das
-  **Korblox Deathspeaker Right Leg** (Asset 139607718) ersetzt: Oberbein,
-  Unterbein und Fuß. Alle drei Segmente liegen im Ordner `R15Fixed` auf dem
-  Standard-R15-Skelett (Hüfte 0, Knie −0.822, Fußgelenk −1.748) und sind nur
-  starr nach unten versetzt; der Loader zieht sie über das Hüftgelenk
-  gemeinsam wieder auf das Standard-Rig, sodass die Asset-internen Abstände
-  erhalten bleiben.
-  * **Warum nicht nur das Oberbein?** Das wurde früher gemacht, weil
-    Unterbein und Fuß des Assets für mechanisch aus dem klassischen R6-Bein
-    abgeleitete Kopien gehalten wurden. Ergebnis: Unter dem Korblox-Oberbein
-    standen ein Blocky-Unterbein und ein Blocky-Fuß im Bild, obwohl der
-    Avatar Korblox trägt. Der Roblox-Client verwirft bei einem Bein-Asset
-    kein Segment – er setzt jedes Kind des Rig-Ordners per
-    `ReplaceBodyPartR15` ein.
-  * Beim GFX-Typ HearthandsType ist das anders: Dort ist der Körper R6, das
-    Korblox-Asset ersetzt also genau ein Bein-Stück.
+* **`korblox = true`** – das rechte Oberbein wird durch den **Korblox
+  Deathspeaker Right Leg**-Stumpf (Asset 139607718) ersetzt; **Unterbein und
+  Fuß entfallen ersatzlos**. Das ist der „legless“-Look des Bundles: Unter
+  dem Stumpf ist im Roblox-Client nichts.
+  * Das Asset enthält im Ordner `R15Fixed` zwar auch `RightLowerLeg` und
+    `RightFoot`, aber nur als kleine, frei schwebende Bruchstücke (rund
+    0,35 × 0,60 bzw. 0,26 Einheiten groß, mit sichtbaren Lücken zum Stumpf).
+    Roblox zeigt sie nicht – deshalb werden sie nicht übernommen.
+  * **Blocky-Fallback ist hier verboten:** Fehlt ein Segment, ersetzt der
+    ClassicType es normalerweise durch das passende Teil des
+    Standard-R15-Blocky-Rigs. Beim Korblox-Bein darf das nicht passieren –
+    sonst steht unter dem Korblox-Stumpf ein Blocky-Unterbein mit
+    Blocky-Fuß. Der Loader meldet die entfernten Segmente deshalb als
+    `hidden_body_parts` im `AvatarBundle`
+    (`korblox_hidden_segments()` in `scripts/roblox_opencloud.py`), und
+    `render_classic_scene` lässt sie komplett weg
+    (`_skipped_body_parts()`).
+  * Dieselbe Regel greift automatisch, wenn der Avatar das Korblox-Bein
+    ohnehin im Inventar trägt (Asset-Typ 31) – unabhängig von der Option.
+  * Beim GFX-Typ HearthandsType ist das anders: Dort ist der Körper R6 und
+    das Korblox-Asset ersetzt genau ein Beinstück.
+  * Nur das **rechte** Korblox-Bein (139607718) ist hinterlegt; das linke
+    Bein des Bundles (139607673) hat keine eigene Sonderregel.
 * **`headless = true`** – der Kopf wird ausgeblendet und die
   Gesicht-Accessoires (Asset-Typ 42, z. B. Brillen oder Masken) ebenfalls.
   Haare, Hüte und Hals-Accessoires bleiben sichtbar. Enthält ein Haar-Asset
@@ -84,13 +91,13 @@ Beide Optionen kennt der ClassicType jetzt genauso wie der HearthandsType
   Teil des Accessoires und damit sichtbar – das entspricht dem Verhalten des
   GFX-Typs HearthandsType.
 
-Für **jedes** Bein-Asset gilt dieselbe Regel: Es wird kein Segment
-verworfen. Ein klassisches Bein-Paket aus dem Inventar (z. B. „ROBLOX Boy
-Left Leg“, 376531300) liefert alle drei Segmente (Oberbein, Unterbein, Fuß)
-und wird komplett übernommen – der Roblox-Client setzt jedes Kind des
-Ordners `R15ArtistIntent` per `ReplaceBodyPartR15` in das R15 ein. Echte
-R15-Pakete (z. B. „Headless Horseman Left Leg“, 134082507) behalten ohnehin
-alle drei Segmente.
+Für **jedes andere** Bein-Asset gilt: Es wird kein Segment verworfen. Ein
+klassisches Bein-Paket aus dem Inventar (z. B. „ROBLOX Boy Left Leg“,
+376531300) liefert alle drei Segmente (Oberbein, Unterbein, Fuß) und wird
+komplett übernommen – der Roblox-Client setzt jedes Kind des Ordners
+`R15ArtistIntent` per `ReplaceBodyPartR15` in das R15 ein. Echte R15-Pakete
+(z. B. „Headless Horseman Left Leg“, 134082507) behalten ohnehin alle drei
+Segmente.
 
 ## Der Kopf: DynamicHead (Asset-Typ 79)
 

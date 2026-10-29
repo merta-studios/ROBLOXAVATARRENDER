@@ -120,14 +120,15 @@ class ClassicBodyPartTests(unittest.TestCase):
             parts = _load_r15_body_segments(Client(), roots, 401, 29, ("LeftUpperArm",), Path(tmp))
         self.assertAlmostEqual(parts["LeftUpperArm"].cframe[1], 1.379, places=4)
 
-    def test_korblox_leg_asset_contributes_the_whole_right_leg(self):
-        """Das Korblox-Bein (139607718) liefert alle drei rechten Segmente.
+    def test_korblox_leg_asset_contributes_only_its_upper_leg_stump(self):
+        """Das Korblox-Bein (139607718) liefert nur den Oberbein-Stumpf.
 
-        Oberbein, Unterbein und Fuss liegen im Ordner "R15Fixed" auf dem
-        Standard-R15-Skelett (Knie -0.822, Fussgelenk -1.748) und sind nur
-        starr um 1 Stud nach unten versetzt. Wird nur das Oberbein
-        uebernommen, rendert der Avatar darunter ein Blocky-Unterbein und
-        einen Blocky-Fuss, obwohl er Korblox traegt.
+        Das Asset ist der "legless"-Look: sichtbar ist der Stumpf des rechten
+        Oberbeins. Unterbein und Fuss enthaelt es zwar auch, aber nur als
+        kleine, frei schwebende Bruchstuecke - Roblox zeigt sie nicht. Sie
+        werden deshalb nicht uebernommen und vom Renderer ersatzlos
+        ausgeblendet (:func:`korblox_hidden_segments`), damit dort weder
+        Asset-Bruchstuecke noch der Blocky-Rig stehen.
         """
         upper = part("RightUpperLeg", 60, 160, cframe_at(0.4812, -1.2418, -0.030))
         upper.children.append(attachment("RightHipRigAttachment", cframe_at(0.0188, 0.2418, 0.030)))
@@ -142,14 +143,9 @@ class ClassicBodyPartTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch("scripts.roblox_opencloud.parse_rbx_mesh", side_effect=mesh):
             parts = _load_r15_body_segments(Client(), roots, 139607718, 31,
                 ("RightUpperLeg", "RightLowerLeg", "RightFoot"), Path(tmp))
-        # Kein Segment des Korblox-Beins wird verworfen - sonst faellt das
-        # Unterbein und der Fuss auf den R15-Blocky-Rig zurueck.
-        self.assertEqual(set(parts), {"RightUpperLeg", "RightLowerLeg", "RightFoot"})
-        # Alle drei Segmente werden gemeinsam auf das Standard-Rig gehoben
-        # (Hueft auf y = 0) und behalten ihre Asset-internen Abstaende.
+        self.assertEqual(set(parts), {"RightUpperLeg"})
+        # Der Stumpf wird auf das Standard-Rig gehoben (Hueft auf y = 0).
         self.assertAlmostEqual(parts["RightUpperLeg"].cframe[1], -0.2418, places=4)
-        self.assertAlmostEqual(parts["RightLowerLeg"].cframe[1], -1.2097, places=4)
-        self.assertAlmostEqual(parts["RightFoot"].cframe[1], -1.8713, places=4)
 
     def test_classic_r6_leg_asset_keeps_all_three_segments(self):
         """Ein klassisches R6-Bein-Paket liefert alle drei R15-Segmente.
@@ -326,6 +322,44 @@ class ClassicBodyPartTests(unittest.TestCase):
         self.assertEqual(atlas.getpixel((col * R15_TILE + 64, row * R15_TILE + 64)), (220, 10, 20, 255))
         col, row = FACE_TILE_POS["Back"]
         self.assertEqual(atlas.getpixel((col * R15_TILE + 64, row * R15_TILE + 64))[3], 0)
+
+class ClassicHiddenSegmentTests(unittest.TestCase):
+    """Segmente, die ein Asset ersatzlos entfernt, bekommen keinen Fallback."""
+
+    def test_korblox_gap_is_not_filled_by_the_blocky_rig(self):
+        from scripts.classic_render import _skipped_body_parts
+
+        official = load_r15_blocky_rig()
+        skipped = _skipped_body_parts(official, {"RightLowerLeg", "RightFoot"}, False)
+        self.assertEqual(skipped, {"RightLowerLeg", "RightFoot"})
+        # Alles andere wird weiterhin gerendert.
+        self.assertIn("RightUpperLeg", official)
+        self.assertNotIn("RightUpperLeg", skipped)
+        self.assertNotIn("LeftFoot", skipped)
+
+    def test_without_hidden_segments_nothing_is_skipped(self):
+        from scripts.classic_render import _skipped_body_parts
+
+        official = load_r15_blocky_rig()
+        self.assertEqual(_skipped_body_parts(official, None, False), set())
+        self.assertEqual(_skipped_body_parts(official, set(), False), set())
+
+    def test_headless_keeps_skipping_the_head(self):
+        from scripts.classic_render import _skipped_body_parts
+
+        official = load_r15_blocky_rig()
+        self.assertEqual(_skipped_body_parts(official, None, True), {"Head"})
+        # Headless und Korblox-Luecke zusammen.
+        self.assertEqual(
+            _skipped_body_parts(official, {"RightFoot"}, True), {"Head", "RightFoot"}
+        )
+
+    def test_unknown_hidden_names_do_not_add_parts(self):
+        from scripts.classic_render import _skipped_body_parts
+
+        official = load_r15_blocky_rig()
+        self.assertEqual(_skipped_body_parts(official, {"Tail"}, False), set())
+
 
 try:
     import bpy
@@ -689,12 +723,14 @@ class KorbloxLoaderTests(unittest.TestCase):
         self.assertIsNotNone(result["mesh"])
         self.assertIsNone(result["texture_path"])
 
-    def test_korblox_leg_segments_include_lower_leg_and_foot(self):
-        """Das Korblox-Bein wird komplett geladen - inklusive Unterbein/Fuss.
+    def test_korblox_leg_segments_hide_lower_leg_and_foot(self):
+        """Das Korblox-Bein blendet Unterbein und Fuss ersatzlos aus.
 
-        Nur das Oberbein zu nehmen liess im ClassicType-Render ein
-        Blocky-Unterbein und einen Blocky-Fuss unter dem Korblox-Oberbein
-        stehen, obwohl der Avatar das Bein besitzt.
+        Regression: Wurden Unterbein und Fuss nur "nicht uebernommen", fielen
+        sie im ClassicType-Render auf den Blocky-Rig zurueck - der Avatar
+        stand mit einem Blocky-Unterbein und Blocky-Fuss unter dem
+        Korblox-Stumpf da, obwohl dort nichts sein darf. Sie muessen
+        stattdessen als entfernt gemeldet werden.
         """
         from scripts import roblox_opencloud as roc
 
@@ -716,7 +752,37 @@ class KorbloxLoaderTests(unittest.TestCase):
              patch.object(roc.RobloxOpenCloudClient, "fetch_image", return_value=Image.new("RGBA", (2, 2))), \
              patch.object(roc.RobloxOpenCloudClient, "__init__", lambda self, *a, **k: None):
             parts = client.load_korblox_leg_segments(Path(tmp))
-        self.assertEqual(set(parts), {"RightUpperLeg", "RightLowerLeg", "RightFoot"})
-        # Gemeinsamer Rig-Versatz: das Asset sitzt 1 Stud zu tief.
-        self.assertAlmostEqual(parts["RightFoot"].cframe[1], -1.8713, places=4)
-        self.assertEqual(parts["RightFoot"].asset_id, 139607718)
+        # Nur der sichtbare Stumpf kommt aus dem Asset.
+        self.assertEqual(set(parts), {"RightUpperLeg"})
+        # Unterbein und Fuss des Avatars entfallen dagegen ersatzlos.
+        self.assertEqual(
+            roc.korblox_hidden_segments(139607718), {"RightLowerLeg", "RightFoot"}
+        )
+        # Der Stumpf sitzt am Standard-Rig (Asset liegt 1 Stud zu tief).
+        self.assertAlmostEqual(parts["RightUpperLeg"].cframe[1], -0.2418, places=4)
+        self.assertEqual(parts["RightUpperLeg"].asset_id, 139607718)
+
+    def test_only_the_korblox_asset_hides_segments(self):
+        """Jedes andere Koerperteil-Asset blendet nichts aus.
+
+        Ein normales Bein-Paket (z. B. "Headless Horseman Left Leg") liefert
+        alle drei Segmente - dort darf nichts verschwinden.
+        """
+        from scripts.roblox_opencloud import korblox_hidden_segments
+
+        for asset_id in (134082507, 376531300, 27112052, 100234186631845):
+            self.assertEqual(korblox_hidden_segments(asset_id), set())
+
+    def test_bundle_starts_without_hidden_segments(self):
+        """Ohne Korblox-Bein ist die Menge der ausgeblendeten Segmente leer."""
+        from scripts.roblox_opencloud import AvatarBundle, HeadSpec
+
+        bundle = AvatarBundle(
+            username="test",
+            display_name="test",
+            user_id=1,
+            body_texture_path="",
+            body_colors={},
+            head=HeadSpec(kind="classic_head"),
+        )
+        self.assertEqual(bundle.hidden_body_parts, set())
