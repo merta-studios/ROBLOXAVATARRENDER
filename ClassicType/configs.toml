@@ -1,5 +1,5 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "asilblox0"
+username = "SunsetSiya"
 
 # Hintergrund: "transparent", Hex-Farbe #RGB oder #RRGGBB, direkte http(s)-Bild-URL
 # (max. 50 MB), lokaler Motivname (Originalfarbe) oder "Farbordner/Motiv", z. B.
@@ -34,7 +34,7 @@ material = "Glossy"
 #   "Animation" - Pose aus einer Animation nach animation_asset_id, z. B.
 #                 "Ninja Run" (658830056). Auch hier gilt die erste Keyframe
 #                 der Animation als Vorschau-Moment.
-pose = "Emote"
+pose = "Equipped"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
 emote_asset_id = 132679422049257
@@ -67,7 +67,7 @@ rotation_deg = 0
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
 abstand_oben = 5
-abstand_unten = -10
+abstand_unten = 5
 
 # Render-Hinweis: Dieser GFX-Typ wird mit einer eigenen leeren Szene
 # (scripts/classic_render.py) und ohne R6-Blend-Datei gerendert.
