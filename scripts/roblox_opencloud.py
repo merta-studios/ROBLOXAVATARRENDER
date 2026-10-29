@@ -497,6 +497,8 @@ class RobloxOpenCloudClient:
             work_dir,
             f"mesh_korblox_{mid}.mesh",
         )
+
+        tex_id: int | None = None
         if texture_node is not None:
             sa = texture_node.find_first_child_of_class("SurfaceAppearance")
             if sa is not None:

@@ -613,3 +613,54 @@ class MeshVersionLogTests(unittest.TestCase):
                 _report_mesh_uv("test/ohne UVs", mesh)
             self.assertIn("keine UVs", buf.getvalue())
             self.assertEqual(list(work_dir.iterdir()), [])
+
+
+class KorbloxLoaderTests(unittest.TestCase):
+    """Der Korblox-Lader muss auch ohne SurfaceAppearance eine Textur finden.
+
+    Regression: die Textur-ID wurde nur im SurfaceAppearance-Zweig gesetzt und
+    war im Rueckfall auf ``TextureID`` nicht initialisiert - das liess den
+    kompletten HearthandsType-Render mit UnboundLocalError abbrechen.
+    """
+
+    def _run(self, props):
+        from scripts import roblox_opencloud as roc
+
+        handle = RbxNode("MeshPart", "Handle", props)
+        root = RbxNode("Model", "KorbloxLeg", {})
+        root.children = [handle]
+        mesh = MeshData(
+            version="2.00",
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            normals=[(0.0, 0.0, 1.0)] * 3,
+            uvs=[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)],
+            colors=None,
+            faces=[(0, 1, 2)],
+        )
+
+        class _Img:
+            def save(self, *a, **k):
+                return None
+
+        client = object.__new__(roc.RobloxOpenCloudClient)
+        client._asset_cache = {}
+        client.api_key = ""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(roc, "parse_rbx_model", return_value=[root]), \
+                 patch.object(roc, "parse_rbx_mesh", return_value=mesh), \
+                 patch.object(roc.RobloxOpenCloudClient, "fetch_asset_bytes", return_value=b"x"), \
+                 patch.object(roc.RobloxOpenCloudClient, "fetch_image", return_value=_Img()), \
+                 patch.object(roc.RobloxOpenCloudClient, "__init__", lambda self, *a, **k: None):
+                result = client.load_korblox_leg(Path(tmp))
+        return result
+
+    def test_texture_id_fallback_without_surface_appearance(self):
+        result = self._run({"MeshId": "rbxassetid://123", "TextureID": "rbxassetid://999"})
+        self.assertIsNotNone(result["mesh"])
+        self.assertIsNotNone(result["texture_path"])
+        self.assertIn("999", result["texture_path"])
+
+    def test_no_texture_at_all_still_returns_the_mesh(self):
+        result = self._run({"MeshId": "rbxassetid://123"})
+        self.assertIsNotNone(result["mesh"])
+        self.assertIsNone(result["texture_path"])
