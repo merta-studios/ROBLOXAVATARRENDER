@@ -23,11 +23,7 @@ from scripts.r15_clothing import (
     compose_r15_part_textures,
     crop_template_rect as _crop_template,
 )
-from scripts.rbx_animation import (
-    describe_clip,
-    parse_animation_asset,
-    rotation_angle_deg,
-)
+from scripts.rbx_animation import parse_animation_asset
 from scripts.rbx_formats import (
     IDENTITY_CFRAME,
     MeshData,
@@ -43,9 +39,6 @@ from scripts.rbx_formats import (
 )
 
 DEFAULT_SMILE_ASSET_ID = 144075659
-
-# TEMPORAERE DIAGNOSE (Emote-Ladepfad) -- wird nach der Analyse wieder entfernt.
-EMOTE_DIAGNOSTICS: dict[str, Any] = {}
 
 # Roblox Enum.AlphaMode (siehe create.roblox.com/docs/reference/engine/enums/AlphaMode)
 ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmask", 3: "opaque"}
@@ -406,20 +399,15 @@ class RobloxOpenCloudClient:
         ist die erste Keyframe der Animation, also genau der Anfang der
         Emote-Vorschau (so erzeugt Roblox auch das Vorsau-Bild).
         """
-        info: dict[str, Any] = {"asset_id": asset_id}
-        EMOTE_DIAGNOSTICS["emote"] = info
         try:
             raw = self.fetch_asset_bytes(asset_id)
         except PipelineError as exc:
-            info["fetch_error"] = str(exc)[:600]
             print(f"[emote] Emote {asset_id} konnte nicht geladen werden: {exc}")
             return None
 
-        info["bytes"] = len(raw)
         try:
             roots = parse_rbx_model(raw)
         except Exception as exc:
-            info["parse_error"] = f"{type(exc).__name__}: {exc}"
             print(f"[emote] Emote {asset_id} konnte nicht geparst werden: {exc}")
             return None
 
@@ -432,33 +420,28 @@ class RobloxOpenCloudClient:
                 if node.class_name != "Animation":
                     continue
                 target = extract_asset_id(node.prop("AnimationId"))
-                info["animation_target"] = target
                 if not target or target == asset_id:
                     continue
                 try:
                     raw2 = self.fetch_asset_bytes(target)
-                    info["animation_target_bytes"] = len(raw2)
                     roots2 = parse_rbx_model(raw2)
                 except Exception as exc:
-                    info["animation_target_error"] = f"{type(exc).__name__}: {exc}"[:400]
+                    print(
+                        f"[emote] Ziel-Asset {target} des Emotes {asset_id} "
+                        f"konnte nicht geladen werden: {exc}"
+                    )
                     continue
                 clip = parse_animation_asset(roots2)
                 if clip is not None:
                     break
 
         if clip is None:
-            info["classes"] = sorted({n.class_name for n in _all_nodes(roots)})
             print(
                 f"[emote] Emote {asset_id} enthaelt weder eine KeyframeSequence "
                 "noch eine CurveAnimation."
             )
             return None
 
-        info.update(describe_clip(clip))
-        info["preview_rotations"] = {
-            name: round(rotation_angle_deg(matrix), 2)
-            for name, matrix in sorted(clip.local_rotations(clip.preview_time()).items())
-        }
         print(
             f"[emote] Emote {asset_id}: {clip.source_format} geladen, "
             f"{len(clip.tracks)} Bones, {len(clip.times)} Zeitpunkte, "
@@ -533,8 +516,6 @@ class RobloxOpenCloudClient:
 
         url = f"https://apis.roblox.com/asset-delivery-api/v1/assetId/{asset_id}"
         resp = self._request("GET", url, use_api_key=True)
-        delivery = EMOTE_DIAGNOSTICS.setdefault("deliveries", {}).setdefault(str(asset_id), {})
-        delivery["opencloud_status"] = resp.status_code
 
         if resp.status_code in (401, 403):
             detail = _sanitize_secret(resp.text[:300], self.api_key)
@@ -558,14 +539,6 @@ class RobloxOpenCloudClient:
         if resp.status_code == 200:
             try:
                 payload = resp.json()
-                delivery["opencloud_keys"] = sorted(payload.keys())
-                delivery["locations"] = [
-                    {
-                        "assetFormat": loc.get("assetFormat"),
-                        "url": str(loc.get("location") or "").split("?")[0],
-                    }
-                    for loc in (payload.get("locations") or [])
-                ]
                 location = payload.get("location")
                 if not location and payload.get("locations"):
                     location = payload["locations"][0].get("location")
@@ -579,7 +552,6 @@ class RobloxOpenCloudClient:
         # Fallback auf öffentlichen v2-Endpunkt für eingebaute Standard-Assets
         if not location:
             anon = self._request("GET", f"https://assetdelivery.roblox.com/v2/assetId/{asset_id}")
-            delivery["public_status"] = anon.status_code
             if anon.status_code == 200:
                 payload = anon.json()
                 location = payload.get("location")
@@ -594,16 +566,12 @@ class RobloxOpenCloudClient:
 
         # Niemals den API Key an das CDN mitsenden!
         cdn_resp = self._request("GET", location, use_api_key=False, timeout=30)
-        delivery["cdn_status"] = cdn_resp.status_code
-        delivery["cdn_content_type"] = cdn_resp.headers.get("Content-Type")
         if cdn_resp.status_code != 200:
             raise PipelineError(
                 f"CDN-Download für Asset {asset_id} fehlgeschlagen (HTTP {cdn_resp.status_code})."
             )
 
         data = _decompress_http_bytes(cdn_resp.content)
-        delivery["bytes"] = len(data)
-        delivery["head_hex"] = data[:32].hex()
         self._asset_cache[asset_id] = data
         return data
 
