@@ -1326,11 +1326,15 @@ def _load_r15_body_segments(
             offset = (0.0, 0.0, 0.0) if sm is None else tuple(float(v) for v in sm.prop("Offset", default=(0, 0, 0)))
             sa = node.find_first_child_of_class("SurfaceAppearance")
             tex_id = extract_asset_id(sa.prop("ColorMap", "ColorMapContent")) if sa else None
+            tex_source = "SurfaceAppearance ColorMap" if tex_id else ""
             if not tex_id:
                 tex_id = extract_asset_id(source.prop("TextureID", "TextureId", "TextureContent"))
+                tex_source = "TextureID" if tex_id else ""
             if not tex_id:
                 # Klassische Pakete: die Textur haengt am CharacterMesh des Assets.
                 tex_id = character_texture
+                tex_source = "CharacterMesh-Textur" if tex_id else "keine"
+            print(f"[body_part] Texturquelle {name}: {tex_source} {tex_id or ''}".rstrip())
             alpha_mode = "transparency"
             tint = (1.0, 1.0, 1.0)
             if sa is not None:
