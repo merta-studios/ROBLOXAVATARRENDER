@@ -537,3 +537,28 @@ class HeadRigOriginTests(unittest.TestCase):
         nodes = [self._node("Vector3Value", "Unbekannt", {"Value": (1.0, 2.0, 3.0)})]
         self.assertIsNone(_head_rig_origin(nodes))
         self.assertIsNone(_head_rig_origin([]))
+
+
+class BodyPartProbeTests(unittest.TestCase):
+    """Diagnose-Hilfe: ein Inventar-Koerperteil durch ein Probe-Asset ersetzen."""
+
+    def test_probe_replaces_the_inventory_item_of_that_type(self):
+        from scripts.roblox_opencloud import _apply_body_part_probe
+
+        assets = [
+            {"id": 376531703, "name": "RightLeg", "assetType": {"id": 31}},
+            {"id": 376530220, "name": "LeftArm", "assetType": {"id": 29}},
+        ]
+        with patch.dict("os.environ", {"PROBE_BODY_PART_ASSETS": "100234186631845:31"}):
+            probed = _apply_body_part_probe(assets)
+        types = [int((item.get("assetType") or {}).get("id") or 0) for item in probed]
+        self.assertEqual(sorted(types), [29, 31])
+        right_leg = next(item for item in probed if item["assetType"]["id"] == 31)
+        self.assertEqual(int(right_leg["id"]), 100234186631845)
+
+    def test_without_probe_the_inventory_stays_untouched(self):
+        from scripts.roblox_opencloud import _apply_body_part_probe
+
+        assets = [{"id": 1, "name": "Torso", "assetType": {"id": 27}}]
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(_apply_body_part_probe(assets), assets)
