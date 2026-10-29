@@ -45,7 +45,10 @@ end
 Der Renderer setzt das so um (`BodyScale` in `scripts/classic_render.py`):
 
 * Die Vertices der Körperteile werden pro Achse skaliert, der Kopf uniform
-  um seinen Mittelpunkt.
+  um seinen Mittelpunkt. Beim Kopf wird der Größen-Versatz vom **ursprünglichen**
+  Mittelpunkt aus gemessen und die Position auf die skalierte Körperhöhe
+  gesetzt – sonst entsteht eine Scherung, der Kopf sitzt dann sichtbar zu hoch
+  und der Hut steckt in ihm.
 * Die Positionen der Teile (ihre `CFrame`s im Rig-Space) und die Gelenke der
   Pose werden mit denselben Werten skaliert, damit die Pose auch bei einem
   skalierten Avatar an den richtigen Stellen sitzt.
@@ -169,15 +172,14 @@ ihren eigenen UVs/Texturen gerendert. dabei gelten die Roblox-Regeln:
 ## Emote & Pose
 
 `pose = "Emote"` (Emote über `emote_asset_id`), `pose = "Animation"`
-(Animation über `animation_asset_id`) und `pose = "Equipped"` (die am
-Spieleravatar ausgerüstete Pose) setzen den Avatar in die Pose der
-geladenen Animation. `scripts/rbx_animation.py` liest die Animation,
+(Animation über `animation_asset_id`) und `pose = "Equipped"` (die Profilpose
+des Users) setzen den Avatar in die Pose der geladenen Animation. `scripts/rbx_animation.py` liest die Animation,
 `scripts/classic_render.py` rechnet sie auf das R15-Rig der Classic-Szene um.
 
 | `pose` | Quelle | ID aus der Konfiguration |
 | --- | --- | --- |
 | `"None"` | normales Stehen | – |
-| `"Equipped"` | vom Spieler ausgerüstete Profilpose (Slot 1) | – |
+| `"Equipped"` | Profilpose = Leerlauf-Animation (Asset-Typ 51), sonst Roblox' Standard-Idle „Rthro Idle“ (2510235063) | – |
 | `"Emote"` | Emote (Asset-Typ 61 „EmoteAnimation“) | `emote_asset_id` |
 | `"Animation"` | Animation (Asset-Typ 53 „Animation“, z. B. „Ninja Run“, 658830056) | `animation_asset_id` |
 
@@ -227,7 +229,12 @@ nach:
 * Drehpunkt jedes Segments = die zugehörige Position der offiziellen
   `R15FixedRigAttachmentMap` (`Root`/`Waist`/`Neck`/`Shoulder`/`Elbow`/`Wrist`/
   `Hip`/`Knee`/`Ankle`), also genau die Punkte, an denen Roblox ein
-  Körperteil-Asset einhängt.
+  Körperteil-Asset einhängt. Liegt das geladene Körperteil-Asset mit eigenen
+  `RigAttachment`-Positionen vor, werden diese verwendet: Roblox baut das Rig
+  eines ausgerüsteten Körperteils daraus neu auf
+  (`Humanoid:BuildRigFromAttachments()`), die Gelenke der Pose sitzen also
+  dort, wo das Asset seine eigenen Attachments hat. Segmente ohne Asset
+  (Blocky-Rig als Ersatz) behalten die Standard-Positionen.
 * Die Rotationen werden von der Wurzel aus über die Bone-Hierarchie
   zusammengesetzt; Kind-Segmente wandern mit der Rotation des Elternsegments
   mit (Vorwärtsrechnung über die Gelenkpositionen).
@@ -244,11 +251,22 @@ erzeugt das Vorsau-Bild einer UGC-Emote ebenfalls aus der ersten Keyframe
 (Roblox-Forum: „UGC emotes use the first keyframe for the thumbnail“); das
 System rät den Moment also nicht.
 
-### Ausgerüstete Pose (`pose = "Equipped"`)
+### Profilpose (`pose = "Equipped"`)
 
-Die öffentliche Avatar-API (`avatar.roblox.com/v2/avatar/users/{id}/avatar`)
-liefert im Feld `emotes` die ausgerüsteten Emotes mit ihrer Slot-Nummer.
-Slot 1 ist die Emote, die Roblox auch als Profilpose verwendet. Der ältere
-Endpunkt `/v1/avatar/thumbnail-customizations` liefert die Profilpose
-direkt, verlangt aber ein `.ROBLOSECURITY`-Cookie des eigenen Accounts und
-antwortet deshalb immer mit HTTP 401 – er ist ohne Login nicht nutzbar.
+`"Equipped"` bildet die Pose ab, die Roblox in der **2D-Vorschau des
+Profils** zeigt. Das ist die **Leerlauf-Animation** des Avatars (Roblox-Asset-Typ
+51) – nicht das ausgerüstete Emote aus Slot 1, das nur die Pose im Spiel
+zeigt.
+
+* Ist eine eigene Leerlauf-Animation ausgerüstet, liefert die öffentliche
+  Avatar-API (`avatar.roblox.com/v2/avatar/users/{id}/avatar`) sie in der
+  Asset-Liste (Asset-Typ 51); sie wird dann verwendet.
+* Ist keine ausgerüstet, greift Roblox auf seine Standard-Idle **„Rthro Idle“**
+  (Asset 2510235063, Asset-Typ 51) zurück – genau die wird dann geladen und auf
+  ihre erste Keyframe eingefroren.
+
+Eine selbst gewählte Profilbild-Pose (Roblox-Forum: „the avatar is posed as
+the equipped idle animation's thumbnail“) ließe sich nur über
+`/v1/avatar/thumbnail-customizations` auslesen. Dieser Endpunkt ist fremden
+Nutzern gegenüber gesperrt und antwortet deshalb immer mit HTTP 401 – er ist
+ohne Login nicht nutzbar. Deshalb wird die Leerlauf-Animation verwendet.
