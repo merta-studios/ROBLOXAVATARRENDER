@@ -1176,6 +1176,28 @@ def load_avatar_bundle(
                 f"[head] Asset {head_aid}: "
                 f"{[(n.class_name, n.name) for n in nodes][:12]}"
             )
+            for node in nodes:
+                if node.class_name == "SpecialMesh":
+                    print(
+                        f"[head] SpecialMesh: MeshType={node.prop('MeshType')} "
+                        f"Scale={node.prop('Scale')} Offset={node.prop('Offset')} "
+                        f"MeshId={node.prop('MeshId', 'MeshContent')} "
+                        f"TextureId={node.prop('TextureId', 'TextureID', 'TextureContent')} "
+                        f"Transparency={node.prop('Transparency')} "
+                        f"CFrame={node.prop('CFrame')} "
+                        f"Eltern={node.parent.class_name if node.parent else None}"
+                    )
+                elif node.class_name == "Vector3Value":
+                    print(
+                        f"[head] Vector3Value {node.name} = {node.prop('Value')} "
+                        f"Eltern={node.parent.class_name if node.parent else None}"
+                    )
+                elif node.class_name in ("Part", "MeshPart"):
+                    print(
+                        f"[head] Part {node.name}: CFrame={node.prop('CFrame')} "
+                        f"Transparency={node.prop('Transparency')} "
+                        f"Eltern={node.parent.class_name if node.parent else None}"
+                    )
             # Dynamic heads sind MeshParts mit eigener, UV-gebundener Gesichts-/Kopftextur.
             mp = next((n for n in nodes if n.class_name == "MeshPart"), None)
             sm = next((n for n in nodes if n.class_name == "SpecialMesh"), None)
