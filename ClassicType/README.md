@@ -76,11 +76,13 @@ Beide Optionen kennt der ClassicType jetzt genauso wie der HearthandsType
   Teil des Accessoires und damit sichtbar – das entspricht dem Verhalten des
   GFX-Typs HearthandsType.
 
-Dasselbe gilt für ein **ausgerüstetes** klassisches Bein-Paket: Erkennt der
-Loader ein aus R6 konvertiertes Bein (die Teile tragen `AvatarPartScaleType`
-und ihre Rig-Attachments liegen in R6-Koordinaten), übernimmt er nur das
-Oberbein. Echte R15-Pakete (z. B. „Headless Horseman Left Leg“, 134082507)
-behalten alle drei Segmente.
+Die Regel gilt **nur für das Korblox-Asset 139607718** – nicht für jedes
+Bein-Paket. Ein klassisches Bein-Paket aus dem Inventar (z. B. „ROBLOX Boy
+Left Leg“, 376531300) liefert alle drei Segmente (Oberbein, Unterbein, Fuß)
+und wird auch komplett übernommen: Der Roblox-Client setzt jedes Kind des
+Ordners `R15ArtistIntent` per `ReplaceBodyPartR15` in das R15 ein, es wird
+also kein Segment verworfen. Echte R15-Pakete (z. B. „Headless Horseman
+Left Leg“, 134082507) behalten ohnehin alle drei Segmente.
 
 ## Der Kopf: DynamicHead (Asset-Typ 79)
 

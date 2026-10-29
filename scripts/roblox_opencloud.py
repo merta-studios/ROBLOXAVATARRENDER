@@ -49,10 +49,7 @@ ALPHA_MODE_NAMES: dict[int, str] = {0: "overlay", 1: "transparency", 2: "tintmas
 # https://www.roblox.com/de/catalog/139607718/Korblox-Deathspeaker-Right-Leg
 KORBLOX_RIGHT_LEG_ASSET_ID = 139607718
 
-# Asset-Typen der klassischen Bein-Pakete (Asset-Typ 30 = Left Leg, 31 = Right Leg).
-LEG_BODY_PART_TYPE_IDS = (30, 31)
-
-# R15-Segment eines klassischen Bein-Pakets, das nur als Oberbein uebernommen wird.
+# R15-Segment eines Bein-Pakets, das nur als Oberbein uebernommen wird.
 LEG_UPPER_SEGMENT_NAMES = ("LeftUpperLeg", "RightUpperLeg")
 
 # R6-kompatible starre Accessoire-Typen (Layered Clothing 64..72 wird in R6 bewusst ignoriert)
@@ -1017,28 +1014,32 @@ def _load_r15_body_segments(
 
     # Roblox' Konvertierung klassischer R6-Bein-Pakete: Aus einem einzigen
     # R6-Bein werden die drei R15-Segmente Oberbein, Unterbein und Fuss
-    # abgeleitet. Der Fuss ist dabei nur ein schwarzer Klotz und das
-    # Unterbein eine mechanische Ableitung desselben klassischen Beins.
-    # Roblox markiert solche Teile mit "AvatarPartScaleType" und legt ihre
-    # Rig-Attachments in R6-Koordinaten (sie liegen also nicht auf dem
-    # Standard-Rig). Sie werden darum nur mit ihrem Oberbein uebernommen -
-    # Unterbein und Fuss bleiben beim Avatar.
-    if asset_type_id in LEG_BODY_PART_TYPE_IDS and len(chosen) > 1:
-        classic_offset = _rig_alignment_offset(chosen)
-        classic_marker = any(
-            node.find_first_child("AvatarPartScaleType") is not None for node in chosen
-        )
-        in_r6_space = any(abs(value) > 0.05 for value in classic_offset)
-        if classic_marker and in_r6_space:
-            upper = [node for node in chosen if node.name in LEG_UPPER_SEGMENT_NAMES]
-            if len(upper) == 1:
-                dropped = sorted(node.name for node in chosen if node is not upper[0])
-                candidates = {upper[0].name: candidates[upper[0].name]}
-                chosen = [upper[0]]
-                print(
-                    f"[body_part] Asset {asset_id}: klassisches R6-Bein - nur das Oberbein "
-                    f"({upper[0].name}) wird uebernommen; {', '.join(dropped)} bleiben beim Avatar."
-                )
+    # abgeleitet. Roblox markiert solche Teile mit "AvatarPartScaleType"
+    # (Classic/ProportionsNormal/ProportionsSlender) und legt ihre
+    # Rig-Attachments in R6-Koordinaten - sie liegen also nicht auf dem
+    # Standard-Rig und werden ueber den Rig-Versatz wieder ausgerichtet.
+    #
+    # Die Segmente werden dabei NICHT verworfen: der Roblox-Client setzt
+    # jedes Kind des Ordners "R15ArtistIntent" per "ReplaceBodyPartR15" in
+    # das R15 ein (Client-Modul "MannequinUtility"). Ein klassisches
+    # Bein-Paket liefert also alle drei Segmente - sie sind echte Teile des
+    # Avatars und duerfen nicht durch den Blocky-Fallback ersetzt werden.
+    #
+    # Einzige Ausnahme ist das Korblox-Paket (139607718): dort sind
+    # Unterbein und Fuss mechanische Ableitungen desselben klassischen
+    # Beins (der Fuss ist ein schwarzer Klotz). Diese Regel gilt daher
+    # ausschliesslich fuer dieses eine Asset und nicht fuer jedes
+    # Bein-Paket.
+    if asset_id == KORBLOX_RIGHT_LEG_ASSET_ID and len(chosen) > 1:
+        upper = [node for node in chosen if node.name in LEG_UPPER_SEGMENT_NAMES]
+        if len(upper) == 1:
+            dropped = sorted(node.name for node in chosen if node is not upper[0])
+            candidates = {upper[0].name: candidates[upper[0].name]}
+            chosen = [upper[0]]
+            print(
+                f"[body_part] Asset {asset_id}: Korblox-Bein - nur das Oberbein "
+                f"({upper[0].name}) wird uebernommen; {', '.join(dropped)} bleiben beim Avatar."
+            )
 
     align_offset = _rig_alignment_offset(chosen)
     if any(abs(v) > 1e-6 for v in align_offset):
@@ -1046,6 +1047,10 @@ def _load_r15_body_segments(
             f"[body_part] Asset {asset_id}: Rig-Versatz zurueck auf das Standard-Rig "
             f"({align_offset[0]:.3f}, {align_offset[1]:.3f}, {align_offset[2]:.3f})."
         )
+    print(
+        f"[body_part] Asset {asset_id} (Typ {asset_type_id}): Segmente "
+        f"{', '.join(sorted(node.name for node in chosen)) or 'keine'}."
+    )
     character_texture = _character_mesh_texture(roots)
 
     result: dict[str, BodyPartSpec] = {}
