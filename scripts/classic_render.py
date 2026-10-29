@@ -49,7 +49,12 @@ from scripts.r15_blocky_rig import (
     load_r15_blocky_rig,
 )
 from scripts.r15_clothing import compute_part_uvs
-from scripts.rbx_animation import R6_BONE_PIVOT_ATTACHMENTS, bone_to_r15
+from scripts.rbx_animation import (
+    R6_BONE_PIVOT_ATTACHMENTS,
+    R15_BONE_PARENTS,
+    bone_to_r15,
+    normalize_clip_to_r15,
+)
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
 from scripts.roblox_opencloud import AvatarBundle
@@ -811,6 +816,41 @@ def _world_bbox(objects: list[Any]) -> tuple[np.ndarray, np.ndarray] | None:
     return (lo, hi) if found else None
 
 
+_DIAG_SCENE: dict[str, Any] = {}
+
+
+def _diag_part_boxes(body_objects: dict[str, Any]) -> dict[str, list[float]]:
+    """TEMPORARY: Welt-Bounding-Boxen aller R15-Segmente."""
+    out: dict[str, list[float]] = {}
+    bpy.context.view_layer.update()
+    for name, obj in (body_objects or {}).items():
+        if obj is None:
+            continue
+        corners = np.asarray([tuple(c) for c in obj.bound_box], dtype=np.float64)
+        if corners.size == 0:
+            continue
+        mw = np.asarray(obj.matrix_world, dtype=np.float64)
+        world = corners @ mw[:3, :3].T + mw[:3, 3]
+        lo, hi = world.min(axis=0), world.max(axis=0)
+        out[name] = [round(float(v), 4) for v in (*lo, *hi)]
+    return out
+
+
+def _diag_accessory_boxes(accessory_parents: list[tuple[Any, str]] | None) -> dict[str, list[float]]:
+    """TEMPORARY: Welt-Bounding-Boxen der Accessoires."""
+    out: dict[str, list[float]] = {}
+    bpy.context.view_layer.update()
+    for obj, bone_name in accessory_parents or []:
+        corners = np.asarray([tuple(c) for c in obj.bound_box], dtype=np.float64)
+        if corners.size == 0:
+            continue
+        mw = np.asarray(obj.matrix_world, dtype=np.float64)
+        world = corners @ mw[:3, :3].T + mw[:3, 3]
+        lo, hi = world.min(axis=0), world.max(axis=0)
+        out[f"{obj.name}|{bone_name}"] = [round(float(v), 4) for v in (*lo, *hi)]
+    return out
+
+
 def _emote_joint_rig(bone_name: str, scale: "BodyScale | None" = None) -> tuple[float, float, float]:
     """Gelenkposition eines Bones im Roblox-Rig-Space.
 
@@ -853,13 +893,18 @@ def _emote_world_transforms(
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Vorwaertsberechnung der Emote-Pose ueber die Rig-Hierarchie.
 
-    Roblox bewegt die Segmente ueber eine Kette von Gelenken: die Rotation
-    eines Segments ist relativ zum Elternsegment, und jedes Segment dreht
-    sich um das Gelenk, an dem es haengt. Daraus ergibt sich fuer jeden Bone
-    eine Welt-Rotation und die Welt-Position seines Gelenks.
+    Roblox bewegt die Segmente ueber eine Kette von Gelenken (Motor6Ds): die
+    Rotation eines Segments ist relativ zum Elternsegment, und jedes Segment
+    dreht sich um das Gelenk, an dem es haengt. Daraus ergibt sich fuer jeden
+    Bone eine Welt-Rotation und die Welt-Position seines Gelenks.
+
+    Bones, deren Eltern nicht in der Animation vorkommen, werden an der
+    Standard-Hierarchie des R15-Rigs eingehaengt (deren Rotation ist dann die
+    Identitaet).
 
     Rueckgabe: (Welt-Rotationen, Welt-Gelenkpositionen) im Roblox-Rig-Space.
     """
+    clip = normalize_clip_to_r15(clip)
     local = clip.local_rotations(time)
     parents = clip.parents
     identity = np.eye(3, dtype=np.float64)
@@ -867,8 +912,11 @@ def _emote_world_transforms(
     world_joint: dict[str, np.ndarray] = {}
     for bone in clip.bone_order():
         r_local = np.asarray(local.get(bone, identity), dtype=np.float64)
-        parent = parents.get(bone)
         joint = np.asarray(_emote_joint_rig(bone, scale), dtype=np.float64)
+        # Eltern-Bone: bevorzugt aus der Animation, sonst aus dem R15-Rig.
+        parent = parents.get(bone)
+        if parent is None or parent not in world_rot:
+            parent = R15_BONE_PARENTS.get(bone)
         if parent is None or parent not in world_rot:
             world_rot[bone] = r_local
             world_joint[bone] = joint
@@ -1099,6 +1147,10 @@ def render_classic_scene(
         accessory_parents.append((obj, _accessory_bone(acc)))
         accessory_count += 1
 
+    # TEMPORARY DIAG: Ruhelage aller Koerperteile und Accessoires.
+    _diag_rest = _diag_part_boxes(body_objects)
+    _diag_acc_rest = _diag_accessory_boxes(accessory_parents)
+
     # 3. Pose. Bei "None" ist classic_emote immer None und es passiert nichts.
     if classic_pose in ("Equipped", "Emote", "Animation") and classic_emote is not None:
         bone_empties, _part_empties = _apply_emote_to_r15(
@@ -1106,6 +1158,16 @@ def render_classic_scene(
         )
     elif classic_pose not in ("None", "Equipped", "Emote", "Animation"):
         print(f"[classic] Unbekannte Pose {classic_pose!r} - normales Stehen wird verwendet.")
+
+    # TEMPORARY DIAG
+    _DIAG_SCENE.update(
+        {
+            "parts_rest": _diag_rest,
+            "parts_posed": _diag_part_boxes(body_objects),
+            "acc_rest": _diag_acc_rest,
+            "acc_posed": _diag_accessory_boxes(accessory_parents),
+        }
+    )
 
     # 4. Drehung um die vertikale Achse + Abstaende von oben/unten.
     bbox = _world_bbox(render_objects)

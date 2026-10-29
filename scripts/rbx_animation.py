@@ -99,6 +99,49 @@ R6_BONE_TO_R15: dict[str, str] = {
     "Right Leg": "RightUpperLeg",
 }
 
+# Die Gelenke des Standard-R15-Rigs (Motor6D) tragen feste Namen. Eine
+# Animation spricht diese Gelenke an ("Left Shoulder"); jedes Gelenk bewegt
+# genau ein R15-Teil. Die Zuordnung ist damit eindeutig:
+#   Motor6D "Left Shoulder" -> Teil "LeftUpperArm" (Pivot LeftShoulderRigAttachment)
+#   Motor6D "Neck"          -> Teil "Head"          (Pivot NeckRigAttachment)
+#   Motor6D "Waist"         -> Teil "UpperTorso"    (Pivot WaistRigAttachment)
+#   Motor6D "Root"          -> Teil "LowerTorso"    (Pivot RootRigAttachment)
+R15_JOINT_TO_PART: dict[str, str] = {
+    "Root": "LowerTorso",
+    "Waist": "UpperTorso",
+    "Neck": "Head",
+    "Left Shoulder": "LeftUpperArm",
+    "Left Elbow": "LeftLowerArm",
+    "Left Wrist": "LeftHand",
+    "Right Shoulder": "RightUpperArm",
+    "Right Elbow": "RightLowerArm",
+    "Right Wrist": "RightHand",
+    "Left Hip": "LeftUpperLeg",
+    "Left Knee": "LeftLowerLeg",
+    "Left Ankle": "LeftFoot",
+    "Right Hip": "RightUpperLeg",
+    "Right Knee": "RightLowerLeg",
+    "Right Ankle": "RightFoot",
+}
+
+
+def _bone_key(name: str) -> str:
+    """Normalisierter Vergleichsschluessel fuer Bone-Namen.
+
+    Roblox schreibt die Gelenknamen je nach Format mit oder ohne Leerzeichen
+    ("Left Shoulder" / "LeftShoulder"). Fuer den Abgleich zaehlen nur die
+    Buchstaben.
+    """
+    return "".join(ch for ch in name.casefold() if ch.isalnum())
+
+
+R15_JOINT_LOOKUP: dict[str, str] = {
+    _bone_key(joint): part for joint, part in R15_JOINT_TO_PART.items()
+}
+R6_BONE_LOOKUP: dict[str, str] = {
+    _bone_key(name): part for name, part in R6_BONE_TO_R15.items()
+}
+
 # Gelenk (Drehpunkt) der R6-Begriffe im R15-Rig. Roblox haengt die R6-Posen
 # an denselben Gelenken ein wie die R15-Posen: R6-Schulter = R15-Schulter,
 # R6-Huefte = R15-Huefte, R6-Hals = R15-Hals, R6-Torso = R15-Root.
@@ -559,10 +602,54 @@ def parse_animation_asset(roots: Iterable[RbxNode]) -> AnimationClip | None:
 
 
 def bone_to_r15(name: str) -> str | None:
-    """Bone-Namen auf das R15-Rig abbilden (R15- und R6-Namen)."""
+    """Bone-Namen auf das R15-Rig abbilden (Teil-, Gelenk- und R6-Namen).
+
+    Roblox benutzt in Animationen drei Namenswelten:
+
+    * die Teil-Namen des R15-Rigs ("LeftUpperArm"),
+    * die Gelenk-Namen der Motor6Ds ("Left Shoulder"),
+    * die R6-Begriffe ("Left Arm"), wenn eine alte Emote auf R15
+      umgerechnet wird.
+
+    Alle drei beschreiben dasselbe Gelenk, deshalb werden sie hier auf den
+    jeweiligen R15-Teil abgebildet.
+    """
     if name in R15_BONE_PARENTS:
         return name
-    return R6_BONE_TO_R15.get(name)
+    key = _bone_key(name)
+    joint = R15_JOINT_LOOKUP.get(key)
+    if joint is not None:
+        return joint
+    return R6_BONE_LOOKUP.get(key)
+
+
+def normalize_clip_to_r15(clip: AnimationClip) -> AnimationClip:
+    """Schreibt die Bone-Namen einer Animation auf die R15-Teil-Namen um.
+
+    Eine Animation benennt ihre Bones je nach Format nach den Gelenken des
+    R15-Rigs ("Left Shoulder") oder nach den Teilen ("LeftUpperArm"). Die
+    ClassicType-Szene rechnet mit den Teil-Namen, deshalb werden hier die
+    Namen und die Eltern-Kette umgeschrieben. Bones, die es im R15-Rig nicht
+    gibt, bleiben unter ihrem Namen erhalten (sie werden beim Anwenden der
+    Pose ignoriert).
+    """
+    tracks: dict[str, BoneTrack] = {}
+    for name, track in clip.tracks.items():
+        target = bone_to_r15(name) or name
+        parent = track.parent
+        if parent is not None:
+            parent = bone_to_r15(parent) or parent
+        moved = BoneTrack(name=target, parent=parent)
+        moved.frames = list(track.frames)
+        moved.rotation_curves = dict(track.rotation_curves)
+        moved.position_curves = dict(track.position_curves)
+        moved.rotation_order = track.rotation_order
+        tracks[target] = moved
+    return AnimationClip(
+        source_format=clip.source_format,
+        tracks=tracks,
+        times=list(clip.times),
+    )
 
 
 def rotation_angle_deg(matrix: np.ndarray) -> float:

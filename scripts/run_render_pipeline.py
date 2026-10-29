@@ -28,6 +28,7 @@ from PIL import Image
 
 from scripts.roblox_opencloud import (
     AvatarBundle,
+    DEFAULT_IDLE_ANIMATION_ASSET_ID,
     KORBLOX_RIGHT_LEG_ASSET_ID,
     PipelineError,
     _sanitize_secret,
@@ -44,26 +45,6 @@ from scripts.render_config import (
 
 
 _DIAG: dict[str, Any] = {}
-
-
-def _diag_png_chunk(png_path: Path, key: str, payload: dict[str, Any]) -> None:
-    """TEMPORARY: schreibt Diagnose-Daten als tEXt-Chunk in das PNG."""
-    import struct
-    import zlib
-
-    raw = png_path.read_bytes()
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    chunk = (
-        struct.pack(">I", len(key))
-        + key.encode("ascii")
-        + b"\x00"
-        + body
-        + struct.pack(">I", zlib.crc32(key.encode("ascii") + b"\x00" + body) & 0xFFFFFFFF)
-    )
-    offset = 8
-    length = struct.unpack(">I", raw[offset : offset + 4])[0]
-    offset += 4 + length + 4
-    png_path.write_bytes(raw[:offset] + chunk + raw[offset:])
 
 
 def verify_rendered_png(png_path: Path, *, expect_transparency: bool = True) -> None:
@@ -130,11 +111,15 @@ def resolve_classic_pose(
 ) -> tuple[str, Any, int]:
     """Ermittelt ClassicType-Pose und Emote-Asset -- ohne Blender-Abhaengigkeit.
 
-    Bei ``pose = "None"`` werden WEDER ``fetch_equipped_emote`` NOCH
-    ``load_animation`` aufgerufen. Bei ``"Equipped"`` wird die
-    ausgeruestete Profilpose ueber die API ermittelt und anschliessend wie ein
-    normales Emote geladen; bei ``"Emote"`` gilt ``emote_asset_id``, bei
-    ``"Animation"`` die ``animation_asset_id`` (z. B. "Ninja Run").
+    Bei ``pose = "None"`` wird gar keine Animation geladen. Bei
+    ``"Equipped"`` wird die **Profilpose** verwendet, also genau die Pose, die
+    Roblox in der 2D-Vorschau des Profiles zeigt: das Avatar steht in seiner
+    Leerlauf-Animation (Asset-Typ 51). Ist keine eigene Leerlauf-Animation
+    ausgeruestet, verwendet Roblox selbst seine Standard-Idle ("Rthro Idle"),
+    also wird dann genau diese geladen. Ausgeruestete Emotes (Slot 1) sind
+    dafuer NICHT zustaendig -- die zeigen nur im Spiel die Pose.
+    Bei ``"Emote"`` gilt ``emote_asset_id``, bei ``"Animation"`` die
+    ``animation_asset_id`` (z. B. "Ninja Run").
     """
     pose = str(config.get("pose", "None"))
     if pose not in CLASSIC_POSES:
@@ -146,14 +131,27 @@ def resolve_classic_pose(
     classic_emote: Any = None
 
     if pose == "Equipped":
-        equipped = client.fetch_equipped_emote(bundle.user_id)
-        _DIAG["equipped"] = equipped
-        if equipped and equipped.get("emote_asset_id"):
-            emote_asset_id = int(equipped["emote_asset_id"])
-            print(f"[pose] Ausgeruestete Profilpose (Emote {emote_asset_id}) wurde verwendet.")
+        # Die Profilpose von Roblox: das Avatar steht in seiner Leerlauf-
+        # Animation. Eine selbst gewaehlte "Profilbild-Pose" (Emote) kann nur
+        # ueber ``/v1/avatar/thumbnail-customizations`` gelesen werden - dieser
+        # Endpunkt antwortet fremden Nutzern aber mit "Authentication token is
+        # missing" (er funktioniert nur mit dem eigenen Cookie) und ist damit
+        # oeffentlich nicht auswertbar.
+        idle_asset_id = getattr(bundle, "idle_animation_asset_id", None)
+        if not idle_asset_id:
+            idle_asset_id = DEFAULT_IDLE_ANIMATION_ASSET_ID
+            print(
+                "[pose] Kein eigenes Idle ausgeruestet - Roblox' Standard-Idle "
+                f"({idle_asset_id}) wird fuer die Profilpose verwendet."
+            )
         else:
-            print("[pose] Keine ausgeruestete Profilpose gefunden - Pose bleibt 'None'.")
+            print(f"[pose] Profilpose: ausgeruestetes Idle {idle_asset_id}.")
+        classic_emote = client.load_animation(int(idle_asset_id), work_dir)
+        if classic_emote is None:
+            print("[pose] Profilpose konnte nicht geladen werden - Pose bleibt 'None'.")
             pose = "None"
+        else:
+            emote_asset_id = int(idle_asset_id)
 
     if pose == "Animation":
         # Eine Animation (Asset-Typ "Animation", z. B. "Ninja Run") wird
@@ -174,14 +172,15 @@ def resolve_classic_pose(
                 emote_asset_id = animation_asset_id
                 print(f"[pose] Animation {animation_asset_id} wird verwendet.")
 
-    if pose in ("Equipped", "Emote") and emote_asset_id > 0:
-        classic_emote = client.load_animation(emote_asset_id, work_dir)
-        if classic_emote is None:
-            print(f"[pose] Emote {emote_asset_id} konnte nicht geladen werden - Pose bleibt 'None'.")
+    if pose == "Emote":
+        if emote_asset_id > 0:
+            classic_emote = client.load_animation(emote_asset_id, work_dir)
+            if classic_emote is None:
+                print(f"[pose] Emote {emote_asset_id} konnte nicht geladen werden - Pose bleibt 'None'.")
+                pose = "None"
+        else:
+            print("[pose] Keine gueltige emote_asset_id - Pose bleibt 'None'.")
             pose = "None"
-    elif pose == "Emote":
-        print("[pose] Keine gueltige emote_asset_id - Pose bleibt 'None'.")
-        pose = "None"
 
     # TEMPORARY DIAG
     if classic_emote is not None:
@@ -349,19 +348,34 @@ def main() -> int:
                 f"?userIds={bundle.user_id}&size=420x420&format=Png"
             )
             with urllib.request.urlopen(url, timeout=45) as resp:
-                data = resp.read()
-            profile_path = output_path.with_name(output_path.stem + ".profile.png")
-            profile_path.write_bytes(data)
-            print(f"[diag] Roblox-Profilbild geladen: {len(data)} Bytes")
+                payload = json.loads(resp.read().decode("utf-8"))
+            entries = payload.get("data") or []
+            image_url = entries[0].get("imageUrl") if entries else None
+            if image_url:
+                with urllib.request.urlopen(image_url, timeout=45) as resp:
+                    data = resp.read()
+                profile_path = output_path.with_name(output_path.stem + ".profile.png")
+                profile_path.write_bytes(data)
+                print(f"[diag] Roblox-Profilbild geladen: {len(data)} Bytes")
+            else:
+                print(f"[diag] Kein Profilbild-URL: {payload}")
         except Exception as exc:
             print(f"[diag] Roblox-Profilbild nicht ladbar: {exc}")
 
-        # TEMPORARY DIAG
-        if _DIAG:
-            try:
-                _diag_png_chunk(output_path, "rbxdiag", _DIAG)
-            except Exception as exc:  # pragma: no cover - Diagnose
-                print(f"[diag] konnte nicht geschrieben werden: {exc}")
+        # TEMPORARY DIAG: Diagnose als JSON-Datei neben dem Render ablegen.
+        try:
+            from scripts.classic_render import _DIAG_SCENE
+
+            diag = dict(_DIAG)
+            diag.update(_DIAG_SCENE)
+            if diag:
+                diag_path = output_path.with_name(output_path.stem + ".diag.json")
+                diag_path.write_text(
+                    json.dumps(diag, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                print(f"[diag] Diagnose geschrieben: {diag_path}")
+        except Exception as exc:  # pragma: no cover - Diagnose
+            print(f"[diag] Diagnose konnte nicht geschrieben werden: {exc}")
 
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(
