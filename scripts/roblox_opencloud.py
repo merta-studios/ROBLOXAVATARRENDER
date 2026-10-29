@@ -1186,6 +1186,11 @@ def load_avatar_bundle(
                         head_spec.kind = "dynamic_head"
                         head_spec.mesh = mdata
                         head_spec.mesh_scale = mscale
+                        print(
+                            f"[head] DynamicHead {head_aid}: Mesh geladen "
+                            f"(Groesse={tuple(round(v, 3) for v in ext)}, "
+                            f"Scale={tuple(round(v, 3) for v in mscale)})."
+                        )
                         sa = mp.find_first_child_of_class("SurfaceAppearance")
                         tid = extract_asset_id(
                             (sa.prop("ColorMap", "ColorMapContent") if sa else None)
@@ -1223,7 +1228,8 @@ def load_avatar_bundle(
                             head_spec.custom_texture_path = hp
         except PipelineError:
             raise
-        except Exception:
+        except Exception as exc:
+            print(f"[head] Kopf-Asset {head_aid} nicht auswertbar: {exc!r}")
             # Falls es direkt eine .mesh Datei war
             if raw_head.startswith(b"version "):
                 mdata = parse_rbx_mesh(raw_head)
