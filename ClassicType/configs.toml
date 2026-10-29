@@ -1,5 +1,5 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "SunsetSiya"
+username = "Alamer_Roblox"
 
 # Hintergrund: "transparent", Hex-Farbe #RGB oder #RRGGBB, direkte http(s)-Bild-URL
 # (max. 50 MB), lokaler Motivname (Originalfarbe) oder "Farbordner/Motiv", z. B.
@@ -37,10 +37,10 @@ material = "Glossy"
 #   "Animation" - Pose aus einer Animation nach animation_asset_id, z. B.
 #                 "Ninja Run" (658830056). Auch hier gilt die erste Keyframe
 #                 der Animation als Vorschau-Moment.
-pose = "Equipped"
+pose = "Emote"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
-emote_asset_id = 132679422049257
+emote_asset_id = 5917570207
 
 # Asset-ID der Animation, nur relevant wenn pose = "Animation" steht.
 # Beispiel: "Ninja Run" (Asset-Typ "Animation") aus dem Ninja Animation Pack.
@@ -53,7 +53,7 @@ animation_asset_id = 658830056
 # Oberbein im Render durch das Korblox-Bein ersetzt (mit dessen eigenen
 # Materialien/Texturen) - wie beim GFX-Typ HearthandsType, wo das Korblox-Bein
 # ebenfalls nur ein Stück ist. Unterbein und Fuß bleiben beim Avatar.
-korblox = false
+korblox = true
 
 # Headless Horseman-Look: Wenn true, wird der Kopf unsichtbar gemacht und
 # auch die Gesicht-Accessoires (z. B. Brillen oder Masken) ausgeblendet.
