@@ -46,7 +46,7 @@ rotation_deg = 0
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
 abstand_oben = 5
-abstand_unten = -10
+abstand_unten = 5
 
 # Render-Hinweis: Dieser GFX-Typ wird mit einer eigenen leeren Szene
 # (scripts/classic_render.py) und ohne R6-Blend-Datei gerendert.
