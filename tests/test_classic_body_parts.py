@@ -390,3 +390,34 @@ class ClassicBlenderBodyTests(unittest.TestCase):
             bsdf = opaque.node_tree.nodes["Principled BSDF"]
             self.assertFalse(bsdf.inputs["Alpha"].links)
             self.assertAlmostEqual(bsdf.inputs["Alpha"].default_value, 1.0, places=5)
+
+
+class HeadRigOriginTests(unittest.TestCase):
+    """Der DynamicHead haengt an seinen eigenen Vector3Value-Attachments."""
+
+    def _node(self, class_name, name, props=None, children=()):
+        from scripts.rbx_formats import RbxNode
+
+        return RbxNode(class_name=class_name, name=name, props=dict(props or {}), children=list(children))
+
+    def test_origin_is_the_median_difference_to_the_standard_rig(self):
+        from scripts.roblox_opencloud import _head_rig_origin
+
+        nodes = [
+            self._node("Vector3Value", "NeckRigAttachment", {"Value": (0.0, -0.5, 0.0)}),
+            self._node("Vector3Value", "HairAttachment", {"Value": (0.0, 0.6, 0.0)}),
+            # Ausreisser (FaceCenter liegt in Roblox nicht exakt auf der Mitte).
+            self._node("Vector3Value", "FaceCenterAttachment", {"Value": (0.0, -0.094, 0.0)}),
+        ]
+        origin = _head_rig_origin(nodes)
+        self.assertIsNotNone(origin)
+        self.assertAlmostEqual(origin[0], 0.0, places=5)
+        self.assertAlmostEqual(origin[1], 2.5, places=5)
+        self.assertAlmostEqual(origin[2], 0.0, places=5)
+
+    def test_without_matching_attachments_there_is_no_origin(self):
+        from scripts.roblox_opencloud import _head_rig_origin
+
+        nodes = [self._node("Vector3Value", "Unbekannt", {"Value": (1.0, 2.0, 3.0)})]
+        self.assertIsNone(_head_rig_origin(nodes))
+        self.assertIsNone(_head_rig_origin([]))
