@@ -185,21 +185,24 @@ def resolve_classic_pose(
 
     # TEMPORARY DIAG
     if classic_emote is not None:
-        clip = classic_emote.clip
-        t = float(clip.preview_time())
-        rots = clip.local_rotations(t)
-        _DIAG["pose"] = pose
-        _DIAG["emote_asset_id"] = emote_asset_id
-        _DIAG["format"] = clip.source_format
-        _DIAG["preview_time"] = t
-        _DIAG["n_times"] = len(clip.times)
-        _DIAG["bones"] = {
-            name: {
-                "parent": track.parent,
-                "rot": [round(float(v), 5) for v in rots[name].flatten()],
+        try:
+            clip = classic_emote.clip
+            t = float(clip.preview_time())
+            rots = clip.local_rotations(t)
+            _DIAG["pose"] = pose
+            _DIAG["emote_asset_id"] = emote_asset_id
+            _DIAG["format"] = clip.source_format
+            _DIAG["preview_time"] = t
+            _DIAG["n_times"] = len(clip.times)
+            _DIAG["bones"] = {
+                name: {
+                    "parent": track.parent,
+                    "rot": [round(float(v), 5) for v in rots[name].flatten()],
+                }
+                for name, track in clip.tracks.items()
             }
-            for name, track in clip.tracks.items()
-        }
+        except Exception as exc:  # pragma: no cover - Diagnose
+            print(f"[diag] Clip-Diagnose fehlgeschlagen: {exc}")
 
     return pose, classic_emote, emote_asset_id
 
