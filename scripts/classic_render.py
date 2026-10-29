@@ -40,7 +40,12 @@ except ImportError:  # pragma: no cover - lokal ohne Blender-Systembibliotheken
 
 from scripts.gfx_layout import compute_spacing_transform
 from scripts.image_compositing import compose_background
-from scripts.r15_blocky_rig import R15Part, load_r15_attachments, load_r15_blocky_rig
+from scripts.r15_blocky_rig import (
+    R15_FIXED_ATTACHMENT_POSITIONS,
+    R15Part,
+    load_r15_attachments,
+    load_r15_blocky_rig,
+)
 from scripts.r15_clothing import compute_part_uvs
 from scripts.rbx_formats import IDENTITY_CFRAME, MeshData
 from scripts.render_config import normalize_color
@@ -100,6 +105,21 @@ R15_EMOTE_GROUPS: dict[str, tuple[str, ...]] = {
     "RightArm": ("RightUpperArm", "RightLowerArm", "RightHand"),
     "LeftLeg": ("LeftUpperLeg", "LeftLowerLeg", "LeftFoot"),
     "RightLeg": ("RightUpperLeg", "RightLowerLeg", "RightFoot"),
+}
+
+# Drehachse je Emote-Gruppe: das passende Gelenk des offiziellen R15-Rigs.
+# Roblox wendet die R6-Posen einer Emote um genau diese Gelenke an - die
+# R6-Schulter liegt auf der R15-Schulter, das R6-Hueftgelenk auf dem
+# R15-Hueftgelenk, der R6-Hals auf dem R15-Hals. Die Positionen stehen im
+# Rig-Space (Root im Ursprung, Fusssohlen bei y = -2) und stammen aus der
+# offiziellen R15Fixed-Rig-Attachment-Map.
+R15_EMOTE_PIVOT_ATTACHMENTS: dict[str, str] = {
+    "Head": "NeckRigAttachment",
+    "Torso": "RootRigAttachment",
+    "LeftArm": "LeftShoulderRigAttachment",
+    "RightArm": "RightShoulderRigAttachment",
+    "LeftLeg": "LeftHipRigAttachment",
+    "RightLeg": "RightHipRigAttachment",
 }
 
 # Welches Attachment bewegt sich mit welcher Koerpergruppe? Nur relevant,
@@ -641,6 +661,24 @@ def _pose_part_name(pose_name: str) -> str | None:
     return None
 
 
+def _emote_pivot_bl(group_name: str) -> tuple[float, float, float] | None:
+    """Drehpunkt einer Emote-Gruppe im Blender-Raum.
+
+    Die Gelenkpositionen stehen im Roblox-Rig-Space (Root im Ursprung,
+    Fusssohlen bei y = -2). Im Blender-Raum liegt der Avatar-Root bei z = +2
+    (Fusssohlen bei z = 0) und x zeigt nach hinten, daher
+    (x_bl, y_bl, z_bl) = (-x_rbx, z_rbx, y_rbx + 2).
+    """
+    attachment = R15_EMOTE_PIVOT_ATTACHMENTS.get(group_name)
+    if not attachment:
+        return None
+    pos = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment)
+    if not pos:
+        return None
+    x_rbx, y_rbx, z_rbx = (float(v) for v in pos)
+    return (-x_rbx, z_rbx, y_rbx + 2.0)
+
+
 def _apply_emote_to_r15(
     classic_emote: Any,
     body_objects: dict[str, Any],
@@ -651,9 +689,11 @@ def _apply_emote_to_r15(
     Es gibt weiterhin keine Armatur mit Knochen-Hierarchie. Statt einzelne
     Bloecke zu drehen, werden die zusammengehoerigen R15-Teile einer Gruppe
     (z. B. LeftUpperArm + LeftLowerArm + LeftHand) an ein Empty gehaengt.
-    Die Emote-Rotation wirkt dann auf die ganze Gruppe um ihren gemeinsamen
-    Mittelpunkt. Rueckgabe sind die Empties, damit Accessoires mitbewegt
-    werden koennen. Bei ``pose = "None"`` wird diese Funktion nicht aufgerufen.
+    Die Emote-Rotation wirkt dann auf die ganze Gruppe um das passende
+    Gelenk des offiziellen R15-Rigs (Schulter, Huefte, Hals, Root) - so wie
+    Roblox die R6-Pose der Emote anwendet. Rueckgabe sind die Empties, damit
+    Accessoires mitbewegt werden koennen. Bei ``pose = "None"`` wird diese
+    Funktion nicht aufgerufen.
     """
     preview = getattr(classic_emote, "preview_keyframe", None)
     poses = getattr(preview, "poses", {}) if preview is not None else {}
@@ -672,7 +712,10 @@ def _apply_emote_to_r15(
             world = corners @ mw[:3, :3].T + mw[:3, 3]
             lo = np.minimum(lo, world.min(axis=0))
             hi = np.maximum(hi, world.max(axis=0))
-        pivot = (lo + hi) / 2.0
+        pivot = _emote_pivot_bl(group_name)
+        if pivot is None:
+            # Ohne bekanntes Gelenk bleibt der Mittelpunkt der Gruppe.
+            pivot = ((lo + hi) / 2.0).tolist()
 
         empty = bpy.data.objects.new(f"ClassicR15Group_{group_name}", None)
         scene.collection.objects.link(empty)
@@ -694,9 +737,17 @@ def _apply_emote_to_r15(
         r_bl = T3_RBX_TO_BL @ r_rbx @ T3_RBX_TO_BL
         rot4 = np.eye(4, dtype=np.float64)
         rot4[:3, :3] = r_bl
+        # Die Position der Pose ist relativ zum Gelenk der Gruppe
+        # (R6: Schulter/Huefte/Hals/Root) und wandert mit der Rotation.
+        pos_rbx = np.asarray(cf[0:3], dtype=np.float64)
+        pos_bl = T3_RBX_TO_BL @ pos_rbx
         pivot = np.asarray(empty.matrix_world.translation, dtype=np.float64)
         around_pivot = _translation_mat4(*pivot) @ rot4 @ _translation_mat4(*(-pivot))
         empty.matrix_world = Matrix(around_pivot.tolist()) @ empty.matrix_world
+        if float(np.linalg.norm(pos_bl)) > 1e-6:
+            empty.matrix_world = (
+                Matrix(_translation_mat4(*pos_bl.tolist()).tolist()) @ empty.matrix_world
+            )
         applied += 1
     print(
         f"[classic] Emote-Pose auf {applied} von {len(group_empties)} "
