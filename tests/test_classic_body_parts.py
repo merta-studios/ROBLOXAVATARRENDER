@@ -211,6 +211,72 @@ class ClassicBodyPartTests(unittest.TestCase):
                 ("LeftUpperLeg", "LeftLowerLeg", "LeftFoot"), Path(tmp))
         self.assertEqual(set(parts), {"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"})
 
+    def test_leg_asset_is_hung_at_its_proximal_joint(self):
+        """Ein Bein-Asset haengt an seinem Hueftgelenk - wie in Roblox.
+
+        Roblox baut das Rig eines Koerperteil-Assets aus dessen eigenen
+        "RigAttachment"-Paaren ("AttachmentUtils.buildJoint"): das Gelenk,
+        das die Gruppe mit dem Standard-Rig verbindet, ist das Attachment,
+        das nur auf einem Segment liegt (Hueft). Nur dieses Gelenk wird auf
+        die Standard-Position gezogen - die inneren Abstaende des Assets
+        (hier ein kurzes "Mini"-Bein) bleiben unveraendert.
+
+        Der Versatz darf nicht aus einem Median ueber alle Attachments
+        entstehen: Zubehoer-Anker (Grip, Hair, BodyFront ...) und die
+        distalen Gelenke liegen an ganz anderen Stellen.
+        """
+        upper = part("RightUpperLeg", 70, 170, cframe_at(-20.917, 0.923, 77.312))
+        upper.children.append(attachment("RightHipRigAttachment", cframe_at(-0.048, 0.167, -0.028)))
+        upper.children.append(attachment("RightKneeRigAttachment", cframe_at(-0.032, -0.395, -0.018)))
+        lower = part("RightLowerLeg", 71, 171, cframe_at(-20.918, 0.361, 77.277))
+        lower.children.append(attachment("RightKneeRigAttachment", cframe_at(-0.031, 0.168, 0.017)))
+        lower.children.append(attachment("RightAnkleRigAttachment", cframe_at(-0.031, -0.060, -0.022)))
+        foot = part("RightFoot", 72, 172, cframe_at(-20.921, 0.174, 77.162))
+        foot.children.append(attachment("RightAnkleRigAttachment", cframe_at(-0.028, 0.126, 0.093)))
+        foot.children.append(attachment("RightFootAttachment", cframe_at(-0.010, -0.088, 0.091)))
+        roots = [RbxNode("Folder", "root", children=[
+            RbxNode("Folder", "R15ArtistIntent", children=[upper, lower, foot]),
+        ])]
+        with tempfile.TemporaryDirectory() as tmp, patch("scripts.roblox_opencloud.parse_rbx_mesh", side_effect=mesh):
+            parts = _load_r15_body_segments(Client(), roots, 100234186631845, 31,
+                ("RightUpperLeg", "RightLowerLeg", "RightFoot"), Path(tmp))
+        self.assertEqual(set(parts), {"RightUpperLeg", "RightLowerLeg", "RightFoot"})
+        # Das Hueftgelenk landet exakt auf der Standard-Position (0.5, 0, 0).
+        self.assertAlmostEqual(parts["RightUpperLeg"].rig_attachments["RightHipRigAttachment"][0], 0.5, places=4)
+        self.assertAlmostEqual(parts["RightUpperLeg"].rig_attachments["RightHipRigAttachment"][1], 0.0, places=4)
+        self.assertAlmostEqual(parts["RightUpperLeg"].rig_attachments["RightHipRigAttachment"][2], 0.0, places=4)
+        # Die Teile haengen an ihrem Asset-internen Abstand: das kurze Bein
+        # bleibt kurz (Hueft -> Knie 0.562 Studs statt 0.822).
+        hip = parts["RightUpperLeg"].rig_attachments["RightHipRigAttachment"]
+        knee = parts["RightLowerLeg"].rig_attachments["RightKneeRigAttachment"]
+        ankle = parts["RightLowerLeg"].rig_attachments["RightAnkleRigAttachment"]
+        self.assertAlmostEqual(hip[1] - knee[1], 0.561, places=3)
+        self.assertAlmostEqual(knee[1] - ankle[1], 0.228, places=3)
+        # Und die Segmente sitzen dementsprechend am Standard-Rig.
+        self.assertAlmostEqual(parts["RightUpperLeg"].cframe[0], 0.548, places=3)
+        self.assertAlmostEqual(parts["RightUpperLeg"].cframe[1], -0.167, places=3)
+        self.assertAlmostEqual(parts["RightLowerLeg"].cframe[1], -0.729, places=3)
+        self.assertAlmostEqual(parts["RightFoot"].cframe[1], -0.916, places=3)
+
+    def test_accessory_attachments_do_not_shift_the_alignment(self):
+        """Anker-Anhang (Grip/Collar) verschiebt das Asset nicht.
+
+        Die alten Attachments gehoeren nicht zum Rig: sie liegen beim
+        Roblox-Rig an ganz anderen Stellen und wuerden einen Median ueber
+        alle Ziele faelschlich verschieben.
+        """
+        arm = part("LeftUpperArm", 73, 173, cframe_at(-1.29, 1.379, 0.024))
+        arm.children.append(attachment("LeftShoulderRigAttachment", cframe_at(0.29, 0.384, -0.024)))
+        arm.children.append(attachment("LeftGripAttachment", cframe_at(0.29, -1.379, -0.024)))
+        roots = [RbxNode("Folder", "root", children=[
+            RbxNode("Folder", "R15Fixed", children=[arm]),
+        ])]
+        with tempfile.TemporaryDirectory() as tmp, patch("scripts.roblox_opencloud.parse_rbx_mesh", side_effect=mesh):
+            parts = _load_r15_body_segments(Client(), roots, 402, 29, ("LeftUpperArm",), Path(tmp))
+        # Das Asset ist bereits korrekt platziert -> kein Versatz.
+        self.assertAlmostEqual(parts["LeftUpperArm"].cframe[1], 1.379, places=4)
+        self.assertAlmostEqual(parts["LeftUpperArm"].cframe[0], -1.29, places=4)
+
     def test_classic_package_texture_comes_from_the_character_mesh(self):
         """Klassische Pakete tragen ihre Textur am CharacterMesh, nicht am MeshPart."""
         character = RbxNode("CharacterMesh", "CharacterMesh", {"BaseTextureId": "rbxassetid://777"})

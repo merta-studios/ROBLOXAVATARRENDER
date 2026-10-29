@@ -18,7 +18,11 @@ import zstandard
 from PIL import Image, ImageDraw
 
 from scripts.brick_colors import brick_color_to_rgb, hex_to_rgb
-from scripts.r15_blocky_rig import BODY_PART_ASSET_TYPES, R15_FIXED_ATTACHMENT_POSITIONS
+from scripts.r15_blocky_rig import (
+    BODY_PART_ASSET_TYPES,
+    R15_BONE_PIVOT_ATTACHMENTS,
+    R15_FIXED_ATTACHMENT_POSITIONS,
+)
 from scripts.r15_clothing import (
     CLOTHING_RECTS,
     compose_r15_part_textures,
@@ -924,32 +928,105 @@ def _part_rig_attachments(
     return out
 
 
-def _rig_alignment_offset(nodes: list[RbxNode]) -> tuple[float, float, float]:
-    """Berechnet den Versatz eines Assets zum offiziellen R15Fixed-Rig.
+def _rig_joint_attachments(nodes: list[RbxNode]) -> dict[str, dict[str, tuple[float, float, float]]]:
+    """Absolute Positionen aller Gelenk-Attachments eines Assets.
 
-    Roblox haengt ein Koerperteil-Asset ueber dessen Rig-Attachments ein:
-    die "Rig"-Attachments eines Assets muessen auf den Positionen der
-    offiziellen ``R15FixedRigAttachmentMap`` landen (Roblox-Client-Plugin
-    "AssetImporter"). Viele Assets (z. B. aus R6 konvertierte Pakete) liegen
-    dabei um einen festen Betrag versetzt - die Teile sassen dann sichtbar
-    neben dem Avatar. Der Versatz wird als Median ueber alle passenden
-    Attachments bestimmt, damit ein einzelnes abweichendes Attachment den
-    Versatz nicht verschiebt.
+    Nur die Attachments, die laut :data:`R15_BONE_PIVOT_ATTACHMENTS` das
+    Gelenk eines R15-Segments sind, zaehlen - die uebrigen Attachments
+    (Grip, Collar, Hair, BodyFront/Back, WaistFront, ...) sind Zubehoer-
+    Anker und haben mit dem Rig nichts zu tun.
     """
-    deltas: list[tuple[float, float, float]] = []
+    joint_names = set(R15_BONE_PIVOT_ATTACHMENTS.values())
+    out: dict[str, dict[str, tuple[float, float, float]]] = {}
     for node in nodes:
         part_cframe = _absolute_cframe(node)
+        found: dict[str, tuple[float, float, float]] = {}
         for attachment in node.children:
             if attachment.class_name != "Attachment":
                 continue
-            target = R15_FIXED_ATTACHMENT_POSITIONS.get(attachment.name)
-            if target is None:
+            if attachment.name not in joint_names:
                 continue
             position = cframe_position(
                 compose_cframes(part_cframe, attachment.prop("CFrame", default=IDENTITY_CFRAME))
             )
-            deltas.append((target[0] - position[0], target[1] - position[1], target[2] - position[2]))
+            found[attachment.name] = (
+                float(position[0]),
+                float(position[1]),
+                float(position[2]),
+            )
+        out[node.name] = found
+    return out
+
+
+def _rig_root_joint(
+    joints: dict[str, dict[str, tuple[float, float, float]]],
+) -> tuple[str, str] | None:
+    """Findet das proximale Gelenk einer Asset-Gruppe.
+
+    Roblox baut das Rig eines Koerperteil-Assets aus dessen eigenen
+    "RigAttachment"-Paaren auf (``AttachmentUtils.buildJoint``): jedes
+    Motor6D-Joint bekommt ``C0`` aus dem Attachment des Elternteils und
+    ``C1`` aus dem Attachment des Kindes. Das Gelenk, das die Gruppe mit dem
+    Standard-Rig verbindet, ist dasjenige, dessen Attachment nur auf einem
+    Segment der Gruppe liegt - alle inneren Gelenke (Knie, Ellbogen) liegen
+    auf zwei Segmenten.
+
+    Rueckgabe: (Segment-Name, Attachment-Name) des proximalen Gelenks.
+    """
+    occurrence: dict[str, list[str]] = {}
+    for segment, attachments in joints.items():
+        for name in attachments:
+            occurrence.setdefault(name, []).append(segment)
+    for segment in sorted(joints):
+        pivot = R15_BONE_PIVOT_ATTACHMENTS.get(segment)
+        if pivot is None or pivot not in occurrence:
+            continue
+        if len(occurrence[pivot]) == 1:
+            return segment, pivot
+    return None
+
+
+def _rig_alignment_offset(nodes: list[RbxNode]) -> tuple[float, float, float]:
+    """Berechnet den Versatz eines Assets zum offiziellen R15Fixed-Rig.
+
+    Roblox haengt ein Koerperteil-Asset ueber sein proximales
+    "RigAttachment" ein: dieses Attachment muss auf der Position der
+    offiziellen ``R15FixedRigAttachmentMap`` landen, alle uebrigen Teile des
+    Assets folgen dann starr ueber ihre eigenen Attachments
+    (``AttachmentUtils.buildJoint`` setzt ``C0``/``C1`` aus den
+    Attachment-CFrames des Assets).
+
+    Der Versatz ist deshalb der Abstand zwischen dem proximalen Gelenk des
+    Assets und seiner Zielposition im Standard-Rig. Er wird fuer das
+    komplette Asset (alle Segmente) starr angewendet - so bleiben die
+    Abstände des Assets (z. B. ein kurzes "Mini"-Bein) unveraendert.
+    """
+    joints = _rig_joint_attachments(nodes)
+    root = _rig_root_joint(joints)
+    if root is not None:
+        segment, pivot = root
+        position = joints[segment][pivot]
+        target = R15_FIXED_ATTACHMENT_POSITIONS.get(pivot)
+        if target is not None:
+            return (
+                float(target[0] - position[0]),
+                float(target[1] - position[1]),
+                float(target[2] - position[2]),
+            )
+    # Fallback fuer unvollstaendige Gruppen (z. B. wenn jedes Gelenk auf
+    # zwei Segmenten liegt): Median ueber alle Gelenk-Attachments.
+    deltas: list[tuple[float, float, float]] = []
+    for attachments in joints.values():
+        for name, position in attachments.items():
+            target = R15_FIXED_ATTACHMENT_POSITIONS.get(name)
+            if target is None:
+                continue
+            deltas.append(
+                (target[0] - position[0], target[1] - position[1], target[2] - position[2])
+            )
     if not deltas:
+        # Assets ohne Gelenk-Attachment (z. B. reine Zubehoer-Assets) werden
+        # nicht verschoben.
         return (0.0, 0.0, 0.0)
     offset = []
     for axis in range(3):
@@ -977,6 +1054,69 @@ def _character_mesh_texture(roots: list[RbxNode]) -> int | None:
     return None
 
 
+def _log_segment_diagnostics(
+    *,
+    asset_id: int,
+    name: str,
+    context: str,
+    node: RbxNode,
+    mesh: MeshData,
+    mesh_id: int | None,
+    scale: tuple[float, float, float],
+    texture_id: int | None,
+    texture_path: str | None,
+    alpha_mode: str,
+    tint: tuple[float, ...],
+    part_cframe: tuple[float, ...],
+    align_offset: tuple[float, float, float],
+) -> None:
+    """Gibt die Eckdaten eines Koerperteil-Segments aus.
+
+    Damit laesst sich nachvollziehen, wie Roblox das Segment platziert:
+    Ordner des Assets, Mesh und dessen Ausdehnung, Skalierung (Size zu
+    InitialSize), UV-Bereich, Textur und AlphaMode des SurfaceAppearance.
+    """
+    positions = np.asarray(mesh.positions, dtype=np.float64) if mesh.positions else None
+    if positions is not None and positions.size:
+        bbox_min = positions.min(axis=0)
+        bbox_max = positions.max(axis=0)
+        bbox = (
+            f"min({bbox_min[0]:.3f}, {bbox_min[1]:.3f}, {bbox_min[2]:.3f}) "
+            f"max({bbox_max[0]:.3f}, {bbox_max[1]:.3f}, {bbox_max[2]:.3f})"
+        )
+    else:
+        bbox = "leer"
+    uvs = mesh.uvs or []
+    if uvs:
+        uv_arr = np.asarray(uvs, dtype=np.float64)
+        uv_range = (
+            f"u {uv_arr[:, 0].min():.3f}..{uv_arr[:, 0].max():.3f} "
+            f"v {uv_arr[:, 1].min():.3f}..{uv_arr[:, 1].max():.3f} "
+            f"(0,0: {int(np.sum((uv_arr[:, 0] == 0.0) & (uv_arr[:, 1] == 0.0)))}/{len(uvs)})"
+        )
+    else:
+        uv_range = "keine"
+    size = node.prop("Size", "size")
+    initial_size = node.prop("InitialSize")
+    print(
+        f"[body_part]   diag {name}: ordner={context or '-'} mesh={mesh_id} "
+        f"version={mesh.version} verts={len(mesh.positions)} faces={len(mesh.faces)}"
+    )
+    print(
+        f"[body_part]   diag {name}: bbox={bbox} size={tuple(size) if size else '-'} "
+        f"initial={tuple(initial_size) if initial_size else '-'} "
+        f"scale=({scale[0]:.4f}, {scale[1]:.4f}, {scale[2]:.4f})"
+    )
+    print(
+        f"[body_part]   diag {name}: uv={uv_range} textur={texture_id} "
+        f"alpha_mode={alpha_mode} tint={tuple(round(float(t), 3) for t in tint[:3])}"
+    )
+    print(
+        f"[body_part]   diag {name}: part=({part_cframe[0]:.3f}, {part_cframe[1]:.3f}, "
+        f"{part_cframe[2]:.3f}) textur_datei={Path(texture_path).name if texture_path else '-'}"
+    )
+
+
 def _load_r15_body_segments(
     client: Any, roots: list[RbxNode], asset_id: int, asset_type_id: int,
     names: tuple[str, ...], work_dir: Path,
@@ -989,11 +1129,13 @@ def _load_r15_body_segments(
 
     Die Positionen der Teile ergeben sich aus zwei Roblox-Regeln:
       1. Der Teil sitzt an seinem authored CFrame im Ordner des Assets.
-      2. Das Asset haengt ueber seine Rig-Attachments am Standard-Rig ein.
-         Weicht das Asset davon ab, wird der gesamte Versatz berechnet
-         (:func:`_rig_alignment_offset`) und auf alle Teile angewendet.
+      2. Das Asset haengt ueber sein proximales Rig-Attachment am
+         Standard-Rig ein. Weicht das Asset davon ab, wird der gesamte
+         Versatz berechnet (:func:`_rig_alignment_offset`) und starr auf alle
+         Teile angewendet - die inneren Abstaende des Assets bleiben so
+         erhalten, wie Roblox sie berechnet.
     """
-    candidates: dict[str, tuple[int, RbxNode]] = {}
+    candidates: dict[str, tuple[int, RbxNode, str]] = {}
 
     def visit(node: RbxNode, context: str = "") -> None:
         marker = node.name.casefold()
@@ -1004,14 +1146,14 @@ def _load_r15_body_segments(
         if context not in ("r6", "r15") and node.name in names and node.class_name in ("MeshPart", "Part"):
             priority = {"r15fixed": 4, "r15artistintent": 3, "": 1}.get(context, 0)
             if node.name not in candidates or priority > candidates[node.name][0]:
-                candidates[node.name] = (priority, node)
+                candidates[node.name] = (priority, node, context)
         for child in node.children:
             visit(child, context)
 
     for root in roots:
         visit(root)
 
-    chosen = [node for _, node in candidates.values()]
+    chosen = [node for _, node, _ in candidates.values()]
 
     # Roblox' Konvertierung klassischer R6-Bein-Pakete: Aus einem einzigen
     # R6-Bein werden die drei R15-Segmente Oberbein, Unterbein und Fuss
@@ -1043,6 +1185,12 @@ def _load_r15_body_segments(
             )
 
     align_offset = _rig_alignment_offset(chosen)
+    root_joint = _rig_root_joint(_rig_joint_attachments(chosen))
+    if root_joint is not None:
+        print(
+            f"[body_part] Asset {asset_id}: Einhaengepunkt ist das Gelenk "
+            f"{root_joint[1]} an {root_joint[0]}."
+        )
     if any(abs(v) > 1e-6 for v in align_offset):
         print(
             f"[body_part] Asset {asset_id}: Rig-Versatz zurueck auf das Standard-Rig "
@@ -1102,14 +1250,15 @@ def _load_r15_body_segments(
     character_texture = _character_mesh_texture(roots)
 
     result: dict[str, BodyPartSpec] = {}
-    for name, (_, node) in candidates.items():
+    for name, (_, node, context) in candidates.items():
         try:
             sm = node.find_first_child_of_class("SpecialMesh") if node.class_name == "Part" else None
             source = sm or node
             mid = extract_asset_id(source.prop("MeshId", "MeshContent"))
             if not mid:
                 continue
-            mesh = parse_rbx_mesh(client.fetch_asset_bytes(mid))
+            raw_mesh = client.fetch_asset_bytes(mid)
+            mesh = parse_rbx_mesh(raw_mesh)
             if not mesh.positions or not mesh.faces:
                 continue
             scale = _compute_meshpart_scale(node, mesh) if sm is None else tuple(float(v) for v in sm.prop("Scale", default=(1, 1, 1)))
@@ -1149,6 +1298,28 @@ def _load_r15_body_segments(
                     "- es wird die klassische Koerpertextur verwendet."
                 )
             part_cframe = translate_cframe(_absolute_cframe(node), align_offset)
+            _log_segment_diagnostics(
+                asset_id=asset_id,
+                name=name,
+                context=context,
+                node=node,
+                mesh=mesh,
+                mesh_id=mid,
+                scale=scale,
+                texture_id=tex_id,
+                texture_path=texture_path,
+                alpha_mode=alpha_mode,
+                tint=tint,
+                part_cframe=part_cframe,
+                align_offset=align_offset,
+            )
+            if max(abs(v) for v in align_offset) > 2.0:
+                # Ungewoehnlich grosser Versatz: das Mesh-File sichern, damit
+                # die Platzierung des Assets nachvollziehbar bleibt.
+                try:
+                    (work_dir / f"mesh_{asset_id}_{name}_{mid}.mesh").write_bytes(raw_mesh)
+                except OSError:
+                    pass
             result[name] = BodyPartSpec(
                 asset_id=asset_id, asset_type_id=asset_type_id, mesh=mesh,
                 mesh_scale=scale, mesh_offset=offset,

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import tempfile
 import traceback
@@ -314,6 +315,18 @@ def main() -> int:
                     background_path=background_path,
                     background_value=background_value,
                 )
+
+            # Diagnose-Dateien der Koerperteil-Assets (Texturen, Meshes)
+            # neben das Render-Ergebnis legen, bevor das temporaere
+            # Arbeitsverzeichnis wieder verschwindet. Die CI published sie
+            # im Diagnose-Tag, damit ein fehlerhaftes Asset nachvollziehbar
+            # bleibt.
+            try:
+                for pattern in ("bodypart_*.png", "mesh_*.mesh"):
+                    for item in sorted(work_dir.glob(pattern)):
+                        shutil.copy2(item, output_path.parent / item.name)
+            except OSError:
+                pass
 
         verify_rendered_png(output_path, expect_transparency=(background_kind == "transparent"))
 

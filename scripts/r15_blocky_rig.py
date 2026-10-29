@@ -131,6 +131,36 @@ R15_FIXED_ATTACHMENT_POSITIONS: dict[str, tuple[float, float, float]] = {
     "HatAttachment": (0.0, 3.1, 0.0),
 }
 
+# Gelenk (Drehpunkt) jedes R15-Segments im offiziellen Rig.
+#
+# Roblox bewegt die Segmente ueber Motor6D-Joints: jedes Segment haengt an
+# genau einem Gelenk und dreht sich genau darum. Die Gelenkpositionen stehen
+# im Rig-Space (HumanoidRootPart im Ursprung, Fusssohlen bei y = -2) und
+# stammen aus der offiziellen R15Fixed-Rig-Attachment-Map
+# (Root/Waist/Neck/Shoulder/Elbow/Wrist/Hip/Knee/Ankle) - also genau den
+# Positionen, die Roblox beim Einhaengen eines Koerperteil-Assets benutzt.
+#
+# Diese Zuordnung ist die gemeinsame Basis von Renderer und Client: sie
+# bestimmt, welches "RigAttachment" eines Segments das Gelenk zum Elternteil
+# ist und damit auch, welcher Versatz ein Asset zum Standard-Rig hat.
+R15_BONE_PIVOT_ATTACHMENTS: dict[str, str] = {
+    "LowerTorso": "RootRigAttachment",
+    "UpperTorso": "WaistRigAttachment",
+    "Head": "NeckRigAttachment",
+    "LeftUpperArm": "LeftShoulderRigAttachment",
+    "LeftLowerArm": "LeftElbowRigAttachment",
+    "LeftHand": "LeftWristRigAttachment",
+    "RightUpperArm": "RightShoulderRigAttachment",
+    "RightLowerArm": "RightElbowRigAttachment",
+    "RightHand": "RightWristRigAttachment",
+    "LeftUpperLeg": "LeftHipRigAttachment",
+    "LeftLowerLeg": "LeftKneeRigAttachment",
+    "LeftFoot": "LeftAnkleRigAttachment",
+    "RightUpperLeg": "RightHipRigAttachment",
+    "RightLowerLeg": "RightKneeRigAttachment",
+    "RightFoot": "RightAnkleRigAttachment",
+}
+
 EXPECTED_PARTS = tuple(PART_COLOR_KEYS)
 
 

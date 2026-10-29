@@ -43,6 +43,7 @@ except ImportError:  # pragma: no cover - lokal ohne Blender-Systembibliotheken
 from scripts.gfx_layout import compute_spacing_transform
 from scripts.image_compositing import compose_background
 from scripts.r15_blocky_rig import (
+    R15_BONE_PIVOT_ATTACHMENTS,
     R15_FIXED_ATTACHMENT_POSITIONS,
     R15Part,
     load_r15_attachments,
@@ -102,32 +103,6 @@ FALLBACK_ATTACHMENT_BY_TYPE: dict[int, str] = {
     45: "BodyFrontAttachment",
     46: "BodyBackAttachment",
     47: "WaistBackAttachment",
-}
-
-# Gelenk (Drehpunkt) jedes R15-Segments im offiziellen Rig.
-#
-# Roblox bewegt die Segmente ueber Motor6D-Joints: jedes Segment haengt an
-# genau einem Gelenk und dreht sich genau darum. Die Gelenkpositionen stehen
-# im Rig-Space (HumanoidRootPart im Ursprung, Fusssohlen bei y = -2) und
-# stammen aus der offiziellen R15Fixed-Rig-Attachment-Map
-# (Root/Waist/Neck/Shoulder/Elbow/Wrist/Hip/Knee/Ankle) - also genau den
-# Positionen, die Roblox beim Einhaengen eines Koerperteil-Assets benutzt.
-R15_BONE_PIVOT_ATTACHMENTS: dict[str, str] = {
-    "LowerTorso": "RootRigAttachment",
-    "UpperTorso": "WaistRigAttachment",
-    "Head": "NeckRigAttachment",
-    "LeftUpperArm": "LeftShoulderRigAttachment",
-    "LeftLowerArm": "LeftElbowRigAttachment",
-    "LeftHand": "LeftWristRigAttachment",
-    "RightUpperArm": "RightShoulderRigAttachment",
-    "RightLowerArm": "RightElbowRigAttachment",
-    "RightHand": "RightWristRigAttachment",
-    "LeftUpperLeg": "LeftHipRigAttachment",
-    "LeftLowerLeg": "LeftKneeRigAttachment",
-    "LeftFoot": "LeftAnkleRigAttachment",
-    "RightUpperLeg": "RightHipRigAttachment",
-    "RightLowerLeg": "RightKneeRigAttachment",
-    "RightFoot": "RightAnkleRigAttachment",
 }
 
 # Der Root sitzt im Ursprung des Rig-Space und ist der Drehpunkt des
