@@ -468,6 +468,8 @@ class RobloxOpenCloudClient:
                 try:
                     raw2 = self.fetch_asset_bytes(target)
                     info["animation_target_bytes"] = len(raw2)
+                    if len(raw2) <= 200000:
+                        info["animation_target_raw_b64"] = base64.b64encode(raw2).decode("ascii")
                     roots2 = parse_rbx_model(raw2)
                 except Exception as exc:
                     info["animation_target_error"] = f"{type(exc).__name__}: {exc}"[:400]
@@ -485,6 +487,15 @@ class RobloxOpenCloudClient:
                         "child_count": len(rt.children),
                     }
                     for rt in roots2[:3]
+                ]
+                info["animation_target_nodes"] = [
+                    {
+                        "class": n.class_name,
+                        "name": n.name,
+                        "props": {k: repr(v)[:250] for k, v in n.props.items()},
+                        "children": [c.class_name for c in n.children][:10],
+                    }
+                    for n in nodes2[:400]
                 ]
                 sequences = [n for n in nodes2 if n.class_name == "KeyframeSequence"]
                 if sequences:
