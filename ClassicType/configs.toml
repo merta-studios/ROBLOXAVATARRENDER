@@ -40,7 +40,7 @@ material = "Glossy"
 pose = "Emote"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
-emote_asset_id = 87757463565936
+emote_asset_id = 126354114956642
 
 # Asset-ID der Animation, nur relevant wenn pose = "Animation" steht.
 # Beispiel: "Ninja Run" (Asset-Typ "Animation") aus dem Ninja Animation Pack.
@@ -72,7 +72,7 @@ rotation_deg = 0
 # beginnt; 10 = nur 10 Prozent davon; -10 bedeutet, der Avatar rutscht bereits zu
 # 10% in den Bildrand hinein.
 abstand_oben = 5
-abstand_unten = 5
+abstand_unten = 8
 
 # Render-Hinweis: Dieser GFX-Typ wird mit einer eigenen leeren Szene
 # (scripts/classic_render.py) und ohne R6-Blend-Datei gerendert.
