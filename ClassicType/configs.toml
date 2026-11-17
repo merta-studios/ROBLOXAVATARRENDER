@@ -37,10 +37,10 @@ material = "Glossy"
 #   "Animation" - Pose aus einer Animation nach animation_asset_id, z. B.
 #                 "Ninja Run" (658830056). Auch hier gilt die erste Keyframe
 #                 der Animation als Vorschau-Moment.
-pose = "Equipped"
+pose = "Emote"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
-emote_asset_id = 5917570207
+emote_asset_id = 17746270218
 
 # Asset-ID der Animation, nur relevant wenn pose = "Animation" steht.
 # Beispiel: "Ninja Run" (Asset-Typ "Animation") aus dem Ninja Animation Pack.
