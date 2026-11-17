@@ -1,12 +1,12 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "Alamer_Roblox"
+username = "KimiShark1"
 
 # Erlaubt: "transparent", Hex-Farbe #RGB oder #RRGGBB,
 # direkte http(s)-Bild-URL (max. 50 MB), lokaler Motivname (Originalfarbe) oder
 # "Farbordner/Motiv" für eine bestimmte Variante, z. B. "lila/herzen-konfetti",
 # "weiss/softes-licht" oder "schwarz/neon-linien".
 # Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP.
-background = "blau/sternnebel"
+background = "blau/frostspritzer"
 
 # Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
 material = "Glossy"
@@ -21,7 +21,7 @@ material = "Glossy"
 # bezahlbar, ist aber ein beliebter GFX-Look. Wenn true, wird das rechte Bein
 # im Render durch das Korblox-Bein ersetzt (mit dessen eigenen Materialien/
 # Texturen).
-korblox = true
+korblox = false
 
 # Headless Horseman-Look: Wenn true, wird der Kopf unsichtbar gemacht und
 # auch die Gesicht-Accessoires (z. B. Brillen oder Masken) ausgeblendet.
