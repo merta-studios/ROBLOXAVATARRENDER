@@ -6,7 +6,7 @@ username = "Djselena2013"
 # "lila/herzen-konfetti", "weiss/softes-licht" oder "schwarz/neon-linien".
 # Die Hintergründe selbst wohnen weiterhin im geteilten Ordner backgrounds/
 # und sind nicht in diesen GFX-Typ-Ordner eingezogen.
-background = "transparent"
+background = "blau/sternnebel"
 
 # Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
 material = "Glossy"
@@ -40,7 +40,7 @@ material = "Glossy"
 pose = "Emote"
 
 # Asset-ID des Emotes, nur relevant wenn pose = "Emote" steht.
-emote_asset_id = 17746270218
+emote_asset_id = 87757463565936
 
 # Asset-ID der Animation, nur relevant wenn pose = "Animation" steht.
 # Beispiel: "Ninja Run" (Asset-Typ "Animation") aus dem Ninja Animation Pack.
