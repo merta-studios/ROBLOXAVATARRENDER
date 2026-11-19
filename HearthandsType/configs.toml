@@ -1,12 +1,12 @@
 # Roblox-Benutzername, z. B. MertaStudios. @ am Anfang ist optional.
-username = "Lulud3299"
+username = "Painter1404"
 
 # Erlaubt: "transparent", Hex-Farbe #RGB oder #RRGGBB,
 # direkte http(s)-Bild-URL (max. 50 MB), lokaler Motivname (Originalfarbe) oder
 # "Farbordner/Motiv" für eine bestimmte Variante, z. B. "lila/herzen-konfetti",
 # "weiss/softes-licht" oder "schwarz/neon-linien".
 # Unterstützte lokale Formate: PNG, JPG/JPEG, WebP, TIFF und BMP.
-background = "schwarz/IMG_9415"
+background = "rot/sternnebel"
 
 # Erlaubte Werte: "Glossy" (bisheriger Glanz) oder "Matt" (hohe Rauheit, kein Klarlack).
 material = "Glossy"
